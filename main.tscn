@@ -1,0 +1,69 @@
+[gd_scene format=3 uid="uid://dunq607xwxt4b"]
+
+[ext_resource type="Script" uid="uid://d2joar5lcucap" path="res://main.gd" id="1_0xm2m"]
+[ext_resource type="Texture2D" uid="uid://bwe0nwwx141eg" path="res://Soccerball.svg.png" id="1_ig7tw"]
+[ext_resource type="PackedScene" uid="uid://c7x5xwdtdpyvy" path="res://robot.tscn" id="2_h2yge"]
+[ext_resource type="Script" uid="uid://dbqcr73i0rcvi" path="res://ball.gd" id="3_1bvp3"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_h2yge"]
+size = Vector2(1240, 20)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1bvp3"]
+size = Vector2(20, 840)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_1bvp3"]
+radius = 13.0
+
+[node name="Main" type="Node2D" unique_id=1868556916]
+script = ExtResource("1_0xm2m")
+robot_scene = ExtResource("2_h2yge")
+
+[node name="Field" type="Node2D" parent="." unique_id=1400154608]
+
+[node name="Top Wall" type="StaticBody2D" parent="Field" unique_id=881142963]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Top Wall" unique_id=1818450324]
+position = Vector2(620, 0)
+shape = SubResource("RectangleShape2D_h2yge")
+
+[node name="Right Wall" type="StaticBody2D" parent="Field" unique_id=993572123]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Right Wall" unique_id=1686484657]
+position = Vector2(1240, 420)
+shape = SubResource("RectangleShape2D_1bvp3")
+
+[node name="Left Wall" type="StaticBody2D" parent="Field" unique_id=188380609]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Left Wall" unique_id=2088680230]
+position = Vector2(0, 420)
+shape = SubResource("RectangleShape2D_1bvp3")
+
+[node name="Bottom Wall" type="StaticBody2D" parent="Field" unique_id=220328371]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Bottom Wall" unique_id=10223893]
+position = Vector2(620, 840)
+shape = SubResource("RectangleShape2D_h2yge")
+
+[node name="ColorRect" type="ColorRect" parent="Field" unique_id=1003537714]
+custom_minimum_size = Vector2(1240, 840)
+offset_right = 1240.0
+offset_bottom = 840.0
+color = Color(0.2509804, 0.34509805, 0.24705882, 1)
+metadata/_edit_use_anchors_ = true
+
+[node name="Ball" type="RigidBody2D" parent="." unique_id=1665738439]
+collision_mask = 3
+mass = 0.3
+gravity_scale = 0.0
+script = ExtResource("3_1bvp3")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ball" unique_id=1664515282]
+shape = SubResource("CircleShape2D_1bvp3")
+debug_color = Color(0.6339587, 0.5278586, 3.85046e-07, 0.41960785)
+
+[node name="Sprite2D" type="Sprite2D" parent="Ball" unique_id=916721087]
+scale = Vector2(0.05, 0.05)
+texture = ExtResource("1_ig7tw")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1322995254]
+offset = Vector2(620, 420)

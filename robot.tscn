@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://c7x5xwdtdpyvy"]
+
+[ext_resource type="Script" uid="uid://cx000hnmynvpl" path="res://collision_shape_2d.gd" id="2_yhfw1"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_ru5oq"]
+radius = 30.0
+
+[node name="Robot" type="RigidBody2D" unique_id=887860634]
+contact_monitor = true
+max_contacts_reported = 4
+script = ExtResource("2_yhfw1")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1995870031]
+scale = Vector2(0.01, 0.01)
+shape = SubResource("CircleShape2D_ru5oq")
+debug_color = Color(0.96266025, 0.19602245, 0, 0.41960785)
