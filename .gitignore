@@ -3,3 +3,5 @@
 /android/
 
 addons/godot-git-plugin/
+*.pyc
+__pycache__/
