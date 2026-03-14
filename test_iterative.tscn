@@ -1,0 +1,55 @@
+[gd_scene format=3 uid="uid://dsbmmkwk58ris"]
+
+[ext_resource type="Script" uid="uid://bpedbay218lmv" path="res://test_iterative.gd" id="1_krfus"]
+[ext_resource type="Script" uid="uid://mtf6x1vuqfyr" path="res://robot.gd" id="2_cgvjk"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_krfus"]
+size = Vector2(1240, 20)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_cgvjk"]
+size = Vector2(20, 840)
+
+[node name="Test_iterative" type="Node2D" unique_id=21823838]
+script = ExtResource("1_krfus")
+
+[node name="Robot" type="RigidBody2D" parent="." unique_id=1089230418]
+mass = 0.8
+linear_damp = 3.0
+angular_damp = 3.0
+script = ExtResource("2_cgvjk")
+
+[node name="Field" type="Node2D" parent="." unique_id=1331120356]
+
+[node name="Top Wall" type="StaticBody2D" parent="Field" unique_id=102427936]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Top Wall" unique_id=1257824253]
+position = Vector2(620, 0)
+shape = SubResource("RectangleShape2D_krfus")
+
+[node name="Right Wall" type="StaticBody2D" parent="Field" unique_id=1476952378]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Right Wall" unique_id=411688869]
+position = Vector2(1240, 420)
+shape = SubResource("RectangleShape2D_cgvjk")
+
+[node name="Left Wall" type="StaticBody2D" parent="Field" unique_id=1254950650]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Left Wall" unique_id=1323301884]
+position = Vector2(0, 420)
+shape = SubResource("RectangleShape2D_cgvjk")
+
+[node name="Bottom Wall" type="StaticBody2D" parent="Field" unique_id=430770043]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Field/Bottom Wall" unique_id=915727603]
+position = Vector2(620, 840)
+shape = SubResource("RectangleShape2D_krfus")
+
+[node name="ColorRect" type="ColorRect" parent="Field" unique_id=594117143]
+custom_minimum_size = Vector2(1240, 840)
+offset_right = 1240.0
+offset_bottom = 840.0
+color = Color(0.2509804, 0.34509805, 0.24705882, 1)
+metadata/_edit_use_anchors_ = true
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=801610644]
+offset = Vector2(620, 420)
