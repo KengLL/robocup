@@ -1,13 +1,19 @@
 extends RigidBody2D
 
+# --- Statistics Variables ---
+var path_length = 0.0
+var total_time = 0.0
+var average_speed = 0.0
+var last_frame_pos = Vector2.ZERO
+
 var target_pos = Vector2.ZERO
 var start_pos = Vector2.ZERO
-var control_mode = "2005_INVERSION"
+var control_mode = "2005_INVERSION" # Options: "2005_INVERSION", "MPC", "2005_TIME_OPTIMAL"
 var has_target = false
 
 # --- Hardware Specs ---
 var wheel_distance = 15.0
-var motor_max_force = 80.0
+var motor_max_force = 200.0
 var wheel_angles = [0.0, deg_to_rad(120.0), deg_to_rad(240.0)]
 
 # --- 2005 Dynamic Inversion Gains ---
@@ -26,13 +32,26 @@ func _ready():
 func set_target_waypoint(new_target: Vector2, mode: String):
 	target_pos = new_target
 	start_pos = global_position  # Record the starting point!
+	last_frame_pos = global_position # Reset stats for new run
+	path_length = 0.0
+	total_time = 0.0
 	control_mode = mode
 	has_target = true
 
 func _physics_process(delta):
 	if not has_target: return
 	
-	if global_position.distance_to(target_pos) < 10.0:
+	var frame_distance = global_position.distance_to(last_frame_pos)
+	path_length += frame_distance
+	total_time += delta
+	average_speed = path_length / total_time
+	last_frame_pos = global_position
+	
+	if global_position.distance_to(target_pos) < 5.0:
+		print("--- Results for ", control_mode, " ---")
+		print("Total Path Length: ", snapped(path_length, 0.1))
+		print("Total Time: ", snapped(total_time, 0.1), "s")
+		print("Average Speed: ", snapped(average_speed, 0.1))
 		has_target = false
 		return
 
@@ -45,15 +64,13 @@ func _physics_process(delta):
 	# ==========================================
 	if control_mode == "2005_INVERSION":
 		var cmd = calculate_dynamic_inversion()
-		vx = cmd[0]
-		vy = cmd[1]
-		w = cmd[2]
+		vx = cmd[0]; vy = cmd[1]; w = cmd[2]
 	elif control_mode == "MPC":
 		var cmd = calculate_mpc_rollout()
-		vx = cmd[0]
-		vy = cmd[1]
-		w = cmd[2]
-
+		vx = cmd[0]; vy = cmd[1]; w = cmd[2]
+	elif control_mode == "2005_TIME_OPTIMAL":
+		var cmd = calculate_time_optimal_2005()
+		vx = cmd[0]; vy = cmd[1]; w = cmd[2]
 	# ==========================================
 	# INVERSE KINEMATICS (Apply to wheels)
 	# ==========================================
@@ -143,6 +160,37 @@ func calculate_mpc_rollout() -> Array:
 	# Return the best local vector found
 	return [best_input.x, best_input.y, (0.0 - rotation) * 10.0]
 
+# ---------------------------------------------------------
+# ALGORITHM 3: TIME-OPTIMAL TRAJECTORY (Purwin 2005)
+# ---------------------------------------------------------
+func calculate_time_optimal_2005() -> Array:
+	var to_target = target_pos - global_position
+	var dist = to_target.length()
+	var dir = to_target.normalized()
+	
+	# The 2005 paper calculates the maximum possible acceleration 'a_max' 
+	# based on the motor limits. For simplicity, we estimate it here:
+	var a_max = (motor_max_force * 1.5) / mass 
+	
+	# Bang-Bang Logic: 
+	# We calculate the "Stopping Distance": How much room do we need to brake?
+	# d_brake = v^2 / (2 * a_max)
+	var current_speed = linear_velocity.dot(dir)
+	var stopping_dist = (current_speed * current_speed) / (2.0 * a_max)
+	
+	var desired_velocity = Vector2.ZERO
+	if dist > stopping_dist:
+		# We are far away: Accelerate to max speed
+		desired_velocity = dir * 500.0 # High value to trigger saturation
+	else:
+		# We need to brake: Target a velocity that scales down with distance
+		desired_velocity = dir * sqrt(2.0 * a_max * dist)
+	
+	var local_v = desired_velocity.rotated(-rotation)
+	var desired_omega = (0.0 - rotation) * 5.0
+	
+	return [local_v.x, local_v.y, desired_omega]
+	
 func _draw():
 	# Draw the main chassis (circle)
 	draw_circle(Vector2.ZERO, 20, Color.DARK_GRAY)
@@ -187,5 +235,6 @@ func _draw():
 
 	# Reset the transform (just in case)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-	
+	#var stats_text = "Mode: %s\nDist: %d\nAvg Spd: %d" % [control_mode, path_length, average_speed]
+	#draw_string(ThemeDB.fallback_font, Vector2(-40, -50), stats_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12)
+	#
