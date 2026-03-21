@@ -19,10 +19,13 @@ import math
 import os
 import sys
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))
+
 import numpy as np
 import zmq
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import *
 
 # ── helpers ──────────────────────────────────────────────────────────────────

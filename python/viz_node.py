@@ -16,11 +16,14 @@ import math
 import os
 import sys
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))  # project root for config
+
 import pygame
 import zmq
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import (
+from config import (  # noqa: E402
     ARRIVAL_THRESH,
     DISPLAY_H,
     DISPLAY_SCALE,
@@ -33,6 +36,7 @@ from config import (
     VISION_PORT,
     WHEEL_ANGLES,
 )
+
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 C_FIELD = (0, 100, 0)
@@ -62,7 +66,7 @@ C_STRAT_ON = (0, 255, 0)
 C_STRAT_OFF = (255, 60, 60)
 
 # Manual / gamepad settings
-MANUAL_MAX_OMEGA = 5.0   # rad/s for full stick deflection
+MANUAL_MAX_OMEGA = 5.0  # rad/s for full stick deflection
 JOYSTICK_DEADZONE = 0.10
 # Xbox controller axis indices (adjust if your OS maps them differently):
 #   Axis 0 = Left stick X,  Axis 1 = Left stick Y (up = -1)
@@ -255,9 +259,9 @@ def draw_hud(surf: pygame.Surface, mode_idx: int, strategy_on: bool = False) -> 
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+
 def _apply_deadzone(v: float, dz: float) -> float:
     return 0.0 if abs(v) < dz else v
-
 
 
 def main() -> None:
@@ -294,7 +298,9 @@ def main() -> None:
     target_pin: tuple[float, float] | None = None
     path_start: tuple[float, float] | None = None
 
-    print("[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  4=MANUAL  5=Toggle Strategy")
+    print(
+        "[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  4=MANUAL  5=Toggle Strategy"
+    )
 
     running = True
     while running:
@@ -305,9 +311,9 @@ def main() -> None:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_5:
                     strategy_enabled = not strategy_enabled
-                    manual_pub.send_string(json.dumps(
-                        {"strategy_enabled": strategy_enabled}
-                    ))
+                    manual_pub.send_string(
+                        json.dumps({"strategy_enabled": strategy_enabled})
+                    )
                     state_str = "ON" if strategy_enabled else "OFF"
                     print(f"[VizNode] Strategy → {state_str}")
                 elif event.key in MODE_KEYS:
@@ -316,9 +322,11 @@ def main() -> None:
                     print(f"[VizNode] Mode → {MODES[mode_idx]}")
                     # Leaving MANUAL: send zero velocity so robot stops immediately
                     if MODES[prev_mode_idx] == "MANUAL" and mode_idx != prev_mode_idx:
-                        manual_pub.send_string(json.dumps(
-                            {"direct": {"0": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
-                        ))
+                        manual_pub.send_string(
+                            json.dumps(
+                                {"direct": {"0": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
+                            )
+                        )
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if MODES[mode_idx] != "MANUAL":
@@ -334,7 +342,9 @@ def main() -> None:
                             path_start = None
                         target_pin = (wx, wy)
                         manual_pub.send_string(
-                            json.dumps({"targets": {"0": {"x": wx, "y": wy, "mode": mode}}})
+                            json.dumps(
+                                {"targets": {"0": {"x": wx, "y": wy, "mode": mode}}}
+                            )
                         )
                         print(f"[VizNode] Target → ({wx:.2f}, {wy:.2f})  [{mode}]")
 
@@ -346,8 +356,9 @@ def main() -> None:
             keys = pygame.key.get_pressed()
             vx = (1.0 if keys[pygame.K_d] else 0.0) - (1.0 if keys[pygame.K_a] else 0.0)
             vy = (1.0 if keys[pygame.K_w] else 0.0) - (1.0 if keys[pygame.K_s] else 0.0)
-            w = (1.0 if keys[pygame.K_q] or keys[pygame.K_j] else 0.0) \
-                - (1.0 if keys[pygame.K_e] or keys[pygame.K_k] else 0.0)
+            w = (1.0 if keys[pygame.K_q] or keys[pygame.K_j] else 0.0) - (
+                1.0 if keys[pygame.K_e] or keys[pygame.K_k] else 0.0
+            )
             w *= MANUAL_MAX_OMEGA
 
             if joystick is not None:
@@ -357,12 +368,12 @@ def main() -> None:
                 # Left stick overrides keyboard if any gamepad input detected
                 if abs(lx) > 0 or abs(ly) > 0 or abs(rx) > 0:
                     vx = lx
-                    vy = -ly                      # SDL Y axis is inverted (up = -1)
-                    w = -rx * MANUAL_MAX_OMEGA    # right stick right = clockwise = -ω
+                    vy = -ly  # SDL Y axis is inverted (up = -1)
+                    w = -rx * MANUAL_MAX_OMEGA  # right stick right = clockwise = -ω
 
-            manual_pub.send_string(json.dumps(
-                {"direct": {"0": {"vx": vx, "vy": vy, "w": w}}}
-            ))
+            manual_pub.send_string(
+                json.dumps({"direct": {"0": {"vx": vx, "vy": vy, "w": w}}})
+            )
 
         # Drain vision (keep latest frame)
         while True:
