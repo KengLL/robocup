@@ -9,6 +9,15 @@ var is_chasing = false
 var pass_cooldown = 0.0
 var role_offset = Vector2.ZERO  # Unique offset per robot to avoid stacking
 
+var target_pos = Vector2.ZERO
+var has_target = false
+var control_mode = "2005_INVERSION"
+var wheel_distance = 15.0
+var motor_max_force = 200.0
+var wheel_angles = [0.0, deg_to_rad(120.0), deg_to_rad(240.0)]
+var kp = 15.0
+var kd = 5.0
+
 func _ready():
 	lock_rotation = true
 	linear_damp = 15.0
@@ -23,8 +32,12 @@ func _draw():
 var visual_rotation = 0.0
 
 func _physics_process(delta):
-	if not ball: return
 	if pass_cooldown > 0: pass_cooldown -= delta
+	if has_target:
+		_run_motor_control()
+		return
+	
+	if not ball: return
 
 	var target_pos: Vector2
 	var distance_to_ball = global_position.distance_to(ball.global_position)
@@ -70,3 +83,39 @@ func kick_ball():
 		var kick_dir = global_position.direction_to(target_teammate.global_position)
 		ball.apply_central_impulse(kick_dir * 200)
 		pass_cooldown = 2.0
+
+func _run_motor_control():
+	var cmd = calculate_dynamic_inversion()
+	var vx = cmd[0]
+	var vy = cmd[1]
+	var w = cmd[2]
+
+	var commanded_wheel_speeds = [0.0, 0.0, 0.0]
+	var max_calc_speed = 0.0
+
+	for i in range(3):
+		var alpha = wheel_angles[i]
+		var spd = -sin(alpha) * vx + cos(alpha) * vy + (wheel_distance * w)
+		commanded_wheel_speeds[i] = spd
+		if abs(spd) > max_calc_speed: max_calc_speed = abs(spd)
+
+	if max_calc_speed > 1.0:
+		for i in range(3): commanded_wheel_speeds[i] /= max_calc_speed
+
+	var total_force_local = Vector2.ZERO
+	var total_torque = 0.0
+	for i in range(3):
+		var force_mag = commanded_wheel_speeds[i] * motor_max_force
+		var drive_angle = wheel_angles[i] + (PI / 2.0)
+		total_force_local += Vector2(cos(drive_angle), sin(drive_angle)) * force_mag
+		total_torque += force_mag * wheel_distance
+
+	apply_central_force(total_force_local.rotated(rotation))
+	apply_torque(total_torque)
+
+func calculate_dynamic_inversion() -> Array:
+	var error = target_pos - global_position
+	var desired_accel = (error * kp) - (linear_velocity * kd)
+	var local_accel = desired_accel.rotated(-rotation)
+	var desired_omega = (0.0 - rotation) * 10.0
+	return [local_accel.x, local_accel.y, desired_omega]
