@@ -144,6 +144,9 @@ _CONTROLLERS = {
     "2005_TIME_OPTIMAL": _ctrl_time_optimal,
 }
 
+# Maximum manual angular velocity (rad/s); linear speed is normalised by IK.
+MANUAL_MAX_OMEGA = 5.0
+
 
 # ── per-robot state ───────────────────────────────────────────────────────────
 
@@ -156,20 +159,38 @@ class RobotController:
         self.path_length = 0.0
         self.total_time = 0.0
         self._last_pos: np.ndarray | None = None
+        # MANUAL mode: world-frame (vx, vy, omega) received directly from operator
+        self.direct_vel: tuple | None = None
 
     def set_target(self, x: float, y: float, mode: str | None = None) -> None:
         self.target = [x, y]
         self.path_length = 0.0
         self.total_time = 0.0
         self._last_pos = None
+        self.direct_vel = None
         if mode:
             self.mode = mode
+
+    def set_direct_vel(self, vx: float, vy: float, w: float) -> None:
+        """Switch to MANUAL mode and set world-frame velocity command."""
+        self.direct_vel = (vx, vy, w)
+        self.mode       = "MANUAL"
+        self.target     = None
 
     def compute_wheels(self, rstate: dict) -> list:
         """Given robot state dict, return normalised wheel speeds [w0,w1,w2]."""
         pos = np.array([rstate["x"], rstate["y"]])
         vel = np.array([rstate["vx"], rstate["vy"]])
         angle = rstate["angle"]
+
+        # ── MANUAL: direct velocity pass-through, no iteration needed ──────────
+        if self.mode == "MANUAL":
+            if self.direct_vel is None:
+                return [0.0, 0.0, 0.0]
+            world_vx, world_vy, w = self.direct_vel
+            # Rotate world-frame velocity into the robot's body frame
+            local = _rot2d(np.array([world_vx, world_vy]), -angle)
+            return _inverse_kinematics(local[0], local[1], w)
 
         if self._last_pos is not None:
             self.path_length += float(np.linalg.norm(pos - self._last_pos))
@@ -231,8 +252,28 @@ def main() -> None:
         # Drain strategy targets first (non-blocking)
         _drain_targets(strategy_sub, robots, zmq)
 
-        # Drain manual targets second so mouse clicks override strategy
-        _drain_targets(manual_sub, robots, zmq)
+        # Drain manual targets / direct-velocity commands second so mouse
+        # clicks and WASD/gamepad override strategy
+        while True:
+            try:
+                msg = manual_sub.recv_string()
+                data = json.loads(msg)
+
+                for rid_str, info in data.get("targets", {}).items():
+                    i = int(rid_str)
+                    if 0 <= i < NUM_ROBOTS:
+                        robots[i].set_target(
+                            info["x"], info["y"],
+                            info.get("mode", "2005_INVERSION"),
+                        )
+
+                for rid_str, vel in data.get("direct", {}).items():
+                    i = int(rid_str)
+                    if 0 <= i < NUM_ROBOTS:
+                        robots[i].set_direct_vel(vel["vx"], vel["vy"], vel["w"])
+
+            except zmq.Again:
+                break
 
         # Block until next vision frame
         try:
