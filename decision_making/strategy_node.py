@@ -5,14 +5,16 @@ import os
 import sys
 
 import numpy as np
+
+# Add decision_making/ so sibling modules resolve when run from any cwd
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add python/ so we can share config with the other nodes
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "python"))
+
+from config import VISION_PORT, STRATEGY_PORT
 from geometry import distance, lerp, opp_goal, our_goal
 from prediction import predict_intercept_point
 from state import GameState, build_game_state
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-VISION_PORT = 9090
-STRATEGY_PORT = 9091
 
 OUR_COLOR = "blue"
 
@@ -37,10 +39,18 @@ class ZMQBackend:
         )
 
     def receive_state(self) -> dict | None:
-        raw = None
+        # Block up to RCVTIMEO (100 ms) for the first message
+        try:
+            raw = json.loads(self.vision_sub.recv_string())
+        except self.zmq.Again:
+            return None
+        # Drain any remaining buffered frames (non-blocking) so we always
+        # process the most recent state instead of falling behind.
         while True:
             try:
-                raw = json.loads(self.vision_sub.recv_string())
+                raw = json.loads(
+                    self.vision_sub.recv_string(flags=self.zmq.NOBLOCK)
+                )
             except self.zmq.Again:
                 break
         return raw
@@ -125,9 +135,10 @@ def decide(gamestate: GameState) -> dict[int, np.ndarray]:
 
 
 def main() -> None:
+    print("A")
     parser = argparse.ArgumentParser(description="Strategy node for the RoboCup game")
     parser.add_argument(
-        "--mode", choices=["tcp", "zmq"], default="tcp", help="Mode: tcp or zmq"
+        "--mode", choices=["tcp", "zmq"], default="zmq", help="Mode: tcp or zmq"
     )
     parser.add_argument(
         "--color",
@@ -136,35 +147,46 @@ def main() -> None:
         help="Team color: blue or red",
     )
     args = parser.parse_args()
+    print(f"[DEBUG] args: {args}")
 
     global OUR_COLOR
     OUR_COLOR = args.color
+    print(f"[DEBUG] OUR_COLOR: {OUR_COLOR}")
 
     backend = ZMQBackend() if args.mode == "zmq" else TCPBackend()
+    print(f"[DEBUG] backend: {backend}")
 
     print(f"[Strategy node] {args.mode} mode: started")
     print(f"[Strategy node] {args.mode} mode: Controlling {OUR_COLOR} team")
 
     frame = 0
+    print(f"[DEBUG] frame: {frame}")
     while True:
+        print(f"LOOP {frame}")  # absolute first line in the loop
         raw = backend.receive_state()
         if raw is None:
             continue
-        gamestate = build_game_state(raw, OUR_COLOR)
 
-        targets = decide(gamestate)
-
-        msg = {
-            "targets": {
-                str(rid): {
-                    "x": float(pos[0]),
-                    "y": float(pos[1]),
+        try:
+            gamestate = build_game_state(raw, OUR_COLOR)
+            print(f"[DEBUG] built gamestate, possession={gamestate.possession}")
+            targets = decide(gamestate)
+            print(f"[DEBUG] targets: {targets}")
+            msg = {
+                "targets": {
+                    str(rid): {"x": float(pos[0]), "y": float(pos[1])}
+                    for rid, pos in targets.items()
                 }
-                for rid, pos in targets.items()
             }
-        }
+            backend.send_targets(msg)
+            print(f"[DEBUG] sent targets: {list(msg['targets'].keys())}")
+        except Exception as e:
+            print(f"[ERROR] {e}")
+            import traceback
 
-        backend.send_targets(msg)
+            traceback.print_exc()
+            continue
+
         frame += 1
 
         if frame % 300 == 0:
