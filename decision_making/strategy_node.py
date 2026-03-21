@@ -158,7 +158,6 @@ def main() -> None:
 
     frame = 0
     while True:
-        print(f"LOOP {frame}")  # absolute first line in the loop
         raw = backend.receive_state()
         if raw is None:
             continue
