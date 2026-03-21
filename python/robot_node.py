@@ -244,13 +244,23 @@ def main() -> None:
     cmd_push = ctx.socket(zmq.PUSH)
     cmd_push.connect(f"tcp://localhost:{COMMAND_PORT}")
 
+    strategy_enabled = False
+
     print(
         f"[RobotNode] vision←:{VISION_PORT}  manual←:{MANUAL_PORT}  cmds→:{COMMAND_PORT}  strategy←:{STRATEGY_PORT}"
     )
 
     while True:
-        # Drain strategy targets first (non-blocking)
-        _drain_targets(strategy_sub, robots, zmq)
+        # Drain strategy targets first (non-blocking), only if enabled
+        if strategy_enabled:
+            _drain_targets(strategy_sub, robots, zmq)
+        else:
+            # Still drain the socket so messages don't pile up
+            while True:
+                try:
+                    strategy_sub.recv_string()
+                except zmq.Again:
+                    break
 
         # Drain manual targets / direct-velocity commands second so mouse
         # clicks and WASD/gamepad override strategy
@@ -258,6 +268,12 @@ def main() -> None:
             try:
                 msg = manual_sub.recv_string()
                 data = json.loads(msg)
+
+                # Strategy toggle from viz_node
+                if "strategy_enabled" in data:
+                    strategy_enabled = data["strategy_enabled"]
+                    state_str = "ON" if strategy_enabled else "OFF"
+                    print(f"[RobotNode] Strategy → {state_str}")
 
                 for rid_str, info in data.get("targets", {}).items():
                     i = int(rid_str)

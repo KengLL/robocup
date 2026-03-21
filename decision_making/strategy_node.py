@@ -8,10 +8,10 @@ import numpy as np
 
 # Add decision_making/ so sibling modules resolve when run from any cwd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-# Add python/ so we can share config with the other nodes
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "python"))
 
-from config import VISION_PORT, STRATEGY_PORT
+VISION_PORT = 9090
+STRATEGY_PORT = 9091
+
 from geometry import distance, lerp, opp_goal, our_goal
 from prediction import predict_intercept_point
 from state import GameState, build_game_state
@@ -48,9 +48,7 @@ class ZMQBackend:
         # process the most recent state instead of falling behind.
         while True:
             try:
-                raw = json.loads(
-                    self.vision_sub.recv_string(flags=self.zmq.NOBLOCK)
-                )
+                raw = json.loads(self.vision_sub.recv_string(flags=self.zmq.NOBLOCK))
             except self.zmq.Again:
                 break
         return raw

@@ -194,8 +194,8 @@ def draw_pixel_text(
         cursor_x += (3 * pixel) + spacing + pixel
 
 
-def draw_hud(surf: pygame.Surface, mode_idx: int) -> None:
-    """Bottom status bar — mode selector blocks only."""
+def draw_hud(surf: pygame.Surface, mode_idx: int, strategy_on: bool = False) -> None:
+    """Bottom status bar — mode selector blocks + strategy toggle."""
     y0 = DISPLAY_H
     pad = 5
     pygame.draw.rect(surf, C_HUD_BG, (0, y0, DISPLAY_W, HUD_H))
@@ -241,6 +241,17 @@ def draw_hud(surf: pygame.Surface, mode_idx: int) -> None:
 
         x += block_w + pad
 
+    # Strategy toggle indicator (right side)
+    strat_label = "S ON" if strategy_on else "S OFF"
+    strat_color = C_STRAT_ON if strategy_on else C_STRAT_OFF
+    pixel = 2
+    glyph_w = 3 * pixel
+    char_step = glyph_w + 1 + pixel
+    total_w = len(strat_label) * char_step - pixel
+    sx = DISPLAY_W - total_w - pad
+    sy = y0 + (HUD_H - 5 * pixel) // 2
+    draw_pixel_text(surf, strat_label, sx, sy, strat_color, pixel=pixel, spacing=1)
+
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
@@ -277,12 +288,13 @@ def main() -> None:
     world_state: dict | None = None
     mode_idx = 0
     prev_mode_idx = 0
+    strategy_enabled = False
 
     # Overlay state: cleared on arrival
     target_pin: tuple[float, float] | None = None
     path_start: tuple[float, float] | None = None
 
-    print("[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  4=MANUAL")
+    print("[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  4=MANUAL  5=Toggle Strategy")
 
     running = True
     while running:
@@ -291,7 +303,14 @@ def main() -> None:
                 running = False
 
             elif event.type == pygame.KEYDOWN:
-                if event.key in MODE_KEYS:
+                if event.key == pygame.K_5:
+                    strategy_enabled = not strategy_enabled
+                    manual_pub.send_string(json.dumps(
+                        {"strategy_enabled": strategy_enabled}
+                    ))
+                    state_str = "ON" if strategy_enabled else "OFF"
+                    print(f"[VizNode] Strategy → {state_str}")
+                elif event.key in MODE_KEYS:
                     prev_mode_idx = mode_idx
                     mode_idx = MODE_KEYS[event.key]
                     print(f"[VizNode] Mode → {MODES[mode_idx]}")
@@ -388,7 +407,7 @@ def main() -> None:
                 bx, by = w2s(b["x"], b["y"])
                 pygame.draw.circle(screen, (255, 255, 255), (bx, by), 5)
 
-        draw_hud(screen, mode_idx)
+        draw_hud(screen, mode_idx, strategy_enabled)
 
         pygame.display.flip()
         clock.tick(FPS)
