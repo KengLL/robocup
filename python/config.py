@@ -2,7 +2,8 @@ import math
 
 # ZMQ Ports
 VISION_PORT = 9090  # SimNode   → RobotNode + VizNode  (world state)
-STRATEGY_PORT = 9091  # Reserved for autonomous strategy node (not yet implemented)
+STRATEGY_PORT = 9091  # Reserved for blue autonomous strategy node
+STRATEGY_PORT_RED = 9094 #for red autonomous strategy node
 COMMAND_PORT = 9092  # RobotNode → SimNode  (wheel commands)
 MANUAL_PORT = 9093  # VizNode   → RobotNode (manual click targets)
 
@@ -51,3 +52,7 @@ DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)  # 600
 
 # Arrival threshold (meters)
 ARRIVAL_THRESH = 5.0 / PX_PER_METER  # robot.gd arrival threshold = 5 px
+
+#Goal Dimensions
+GOAL_WIDTH = 1
+GOAL_DEPTH = 0.15

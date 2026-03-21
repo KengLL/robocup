@@ -28,6 +28,30 @@ COLLISION_ROBOT = 1
 COLLISION_BALL = 2
 COLLISION_WALL = 3
 
+#goal positions
+GOAL_WIDTH = 1.0
+GOAL_Y_MIN = FIELD_H / 2 - GOAL_WIDTH / 2
+GOAL_Y_MAX = FIELD_H / 2 + GOAL_WIDTH / 2
+
+#reset the ball posiitons and robots
+def _reset_positions(robots, ball):
+    ball.position = (FIELD_W / 2, FIELD_H / 2)
+    ball.velocity = (0, 0)
+    ball.angular_velocity = 0
+    start_positions = [
+        (2.0, 3.0, 0.0),
+        (1.5, 4.5, 0.0),
+        (0.8, 3.0, 0.0),
+        (7.0, 3.0, math.pi),
+        (7.5, 1.5, math.pi),
+        (8.2, 3.0, math.pi),
+    ]
+    for body, (x, y, angle) in zip(robots, start_positions):
+        body.position = (x, y)
+        body.velocity = (0, 0)
+        body.angle = angle
+        body.angular_velocity = 0
+
 
 def _make_robot(
     space: pymunk.Space, x: float, y: float, angle: float = 0.0
@@ -42,15 +66,38 @@ def _make_robot(
     space.add(body, shape)
     return body
 
-
 def _add_walls(space: pymunk.Space) -> None:
-    corners = [(0, 0), (FIELD_W, 0), (FIELD_W, FIELD_H), (0, FIELD_H)]
-    for i in range(4):
-        a, b = corners[i], corners[(i + 1) % 4]
-        seg = pymunk.Segment(space.static_body, a, b, 0.02)
-        seg.elasticity = 0.8
-        seg.friction = 0.5
-        space.add(seg)
+    # bottom wall
+    seg = pymunk.Segment(space.static_body, (0, 0), (FIELD_W, 0), 0.02)
+    seg.elasticity = 0.8
+    seg.friction = 0.5
+    space.add(seg)
+
+    # top wall
+    seg = pymunk.Segment(space.static_body, (0, FIELD_H), (FIELD_W, FIELD_H), 0.02)
+    seg.elasticity = 0.8
+    seg.friction = 0.5
+    space.add(seg)
+
+    # left wall — two segments with gap for goal
+    seg = pymunk.Segment(space.static_body, (0, 0), (0, GOAL_Y_MIN), 0.02)
+    seg.elasticity = 0.8
+    seg.friction = 0.5
+    space.add(seg)
+    seg = pymunk.Segment(space.static_body, (0, GOAL_Y_MAX), (0, FIELD_H), 0.02)
+    seg.elasticity = 0.8
+    seg.friction = 0.5
+    space.add(seg)
+
+    # right wall — two segments with gap for goal
+    seg = pymunk.Segment(space.static_body, (FIELD_W, 0), (FIELD_W, GOAL_Y_MIN), 0.02)
+    seg.elasticity = 0.8
+    seg.friction = 0.5
+    space.add(seg)
+    seg = pymunk.Segment(space.static_body, (FIELD_W, GOAL_Y_MAX), (FIELD_W, FIELD_H), 0.02)
+    seg.elasticity = 0.8
+    seg.friction = 0.5
+    space.add(seg)
 
 
 def _make_ball(space: pymunk.Space, x: float, y: float) -> pymunk.Body:
@@ -133,7 +180,14 @@ def main() -> None:
     pull.bind(f"tcp://*:{COMMAND_PORT}")
     pull.setsockopt(zmq.RCVTIMEO, 0)  # non-blocking
 
-    commands: dict[str, list] = {str(i): [0.0, 0.0, 0.0] for i in range(NUM_ROBOTS)}
+    commands: dict[str, dict] = {
+        str(i): {"wheel_speeds": [0.0, 0.0, 0.0], "kick": False}
+        for i in range(NUM_ROBOTS)
+    }
+
+    blue_score = 0
+    red_score = 0
+
 
     print(f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}")
 
@@ -146,17 +200,47 @@ def main() -> None:
                 cmd = json.loads(pull.recv_string())
                 rid = str(cmd["robot_id"])
                 if rid in commands:
-                    commands[rid] = cmd["wheel_speeds"]
+                    commands[rid] = {
+                        "wheel_speeds": cmd["wheel_speeds"],
+                        "kick": cmd.get("kick", False),
+                    }
             except zmq.Again:
                 break
 
         # Apply commands, damping, then advance physics
         for i, body in enumerate(robots):
-            _apply_wheel_commands(body, commands[str(i)])
+            _apply_wheel_commands(body, commands[str(i)]["wheel_speeds"])
             _apply_damping(body, DT)
-        _apply_damping_custom(ball, BALL_DAMP, BALL_DAMP, DT)
+
+        #kicking
+        KICK_IMPULSE = 5.0
+        KICK_RANGE = 0.15
+        for i, body in enumerate(robots):
+            if commands[str(i)]["kick"]:
+                dx = ball.position.x - body.position.x
+                dy = ball.position.y - body.position.y
+                dist = math.sqrt(dx**2 + dy**2)
+                if dist < KICK_RANGE:
+                    nx, ny = dx / (dist + 1e-6), dy / (dist + 1e-6)
+                    ball.apply_impulse_at_world_point(
+                        (nx * KICK_IMPULSE, ny * KICK_IMPULSE),
+                        ball.position
+                    )
+        commands[str(i)]["kick"] = False  # reset after one frame
 
         space.step(DT)
+
+        bx = ball.position.x
+        by = ball.position.y
+        if GOAL_Y_MIN <= by <= GOAL_Y_MAX:
+            if bx <= 0.0:
+                red_score += 1
+                print(f"[SimNode] GOAL for RED! Score — Blue: {blue_score}  Red: {red_score}")
+                _reset_positions(robots, ball)
+            elif bx >= FIELD_W:
+                blue_score += 1
+                print(f"[SimNode] GOAL for BLUE! Score — Blue: {blue_score}  Red: {red_score}")
+                _reset_positions(robots, ball)
 
         # Publish world state
         state = {

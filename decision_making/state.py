@@ -7,7 +7,6 @@ FIELD_LENGTH = 9.0  # meters
 FIELD_WIDTH = 6.0  # meters
 TEAM_SIZE = 3  # number of robots per team
 
-
 @dataclass
 class BallState:
     pos: np.ndarray = field(default_factory=lambda: np.zeros(2))  # [x, y] meters
@@ -118,3 +117,9 @@ def _compute_has_ball(gamestate: GameState) -> None:
 
     if best_robot is not None:
         best_robot.has_ball = True
+
+# returns all robots that are obstacles except for those in exclude_ids
+def get_obstacles(gamestate: GameState, exclude_ids: list[int] = None) -> list[RobotState]:
+    exclude_ids = exclude_ids or []
+    all_robots = gamestate.blue + gamestate.red
+    return [r for r in all_robots if r.id not in exclude_ids]
