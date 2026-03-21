@@ -12,6 +12,8 @@ Implements the three controllers from robot.gd:
   2005_TIME_OPTIMAL — Bang-bang controller  (robot.gd calculate_time_optimal_2005)
 """
 
+from __future__ import annotations
+
 import json
 import math
 import os
