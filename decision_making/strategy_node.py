@@ -1,3 +1,4 @@
+# receives world state, runs strategy & control the game
 from __future__ import annotations
 import argparse
 import json

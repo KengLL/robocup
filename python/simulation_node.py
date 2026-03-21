@@ -19,7 +19,9 @@ import numpy as np
 import pymunk
 import zmq
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))  # project root for config
 from config import *
 
 # collision types

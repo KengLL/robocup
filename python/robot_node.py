@@ -19,10 +19,13 @@ import math
 import os
 import sys
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.dirname(_HERE))
+
 import numpy as np
 import zmq
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import *
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -178,8 +181,8 @@ class RobotController:
     def set_direct_vel(self, vx: float, vy: float, w: float) -> None:
         """Switch to MANUAL mode and set world-frame velocity command."""
         self.direct_vel = (vx, vy, w)
-        self.mode       = "MANUAL"
-        self.target     = None
+        self.mode = "MANUAL"
+        self.target = None
 
     def compute_wheels(self, rstate: dict) -> list:
         """Given robot state dict, return normalised wheel speeds [w0,w1,w2]."""
@@ -290,7 +293,8 @@ def main() -> None:
                     i = int(rid_str)
                     if 0 <= i < NUM_ROBOTS:
                         robots[i].set_target(
-                            info["x"], info["y"],
+                            info["x"],
+                            info["y"],
                             info.get("mode", "2005_INVERSION"),
                         )
 
@@ -330,7 +334,6 @@ def _drain_targets(sub_socket, robots, zmq_module):
     while True:
         try:
             msg = sub_socket.recv_string()
-            print(f"[DEBUG] received target: {msg[:100]}")
             targets = json.loads(msg).get("targets", {})
             for rid_str, info in targets.items():
                 i = int(rid_str)
