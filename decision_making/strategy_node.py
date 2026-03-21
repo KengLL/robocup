@@ -1,4 +1,6 @@
 # receives world state, runs strategy & control the game
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -145,20 +147,16 @@ def main() -> None:
         help="Team color: blue or red",
     )
     args = parser.parse_args()
-    print(f"[DEBUG] args: {args}")
 
     global OUR_COLOR
     OUR_COLOR = args.color
-    print(f"[DEBUG] OUR_COLOR: {OUR_COLOR}")
 
     backend = ZMQBackend() if args.mode == "zmq" else TCPBackend()
-    print(f"[DEBUG] backend: {backend}")
 
     print(f"[Strategy node] {args.mode} mode: started")
     print(f"[Strategy node] {args.mode} mode: Controlling {OUR_COLOR} team")
 
     frame = 0
-    print(f"[DEBUG] frame: {frame}")
     while True:
         print(f"LOOP {frame}")  # absolute first line in the loop
         raw = backend.receive_state()
@@ -167,9 +165,7 @@ def main() -> None:
 
         try:
             gamestate = build_game_state(raw, OUR_COLOR)
-            print(f"[DEBUG] built gamestate, possession={gamestate.possession}")
             targets = decide(gamestate)
-            print(f"[DEBUG] targets: {targets}")
             msg = {
                 "targets": {
                     str(rid): {"x": float(pos[0]), "y": float(pos[1])}
@@ -177,7 +173,6 @@ def main() -> None:
                 }
             }
             backend.send_targets(msg)
-            print(f"[DEBUG] sent targets: {list(msg['targets'].keys())}")
         except Exception as e:
             print(f"[ERROR] {e}")
             import traceback
