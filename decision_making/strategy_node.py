@@ -1,19 +1,16 @@
 # receives world state, runs strategy & control the game
 from __future__ import annotations
-
 import argparse
 import json
+import numpy as np
 import os
 import sys
 
-import numpy as np
-
-# Add decision_making/ so sibling modules resolve when run from any cwd
+_PYTHON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'python')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PYTHON_DIR)
 
-VISION_PORT = 9090
-STRATEGY_PORT = 9091
-
+from config import VISION_PORT, STRATEGY_PORT, STRATEGY_PORT_RED
 from geometry import distance, lerp, opp_goal, our_goal
 from prediction import predict_intercept_point
 from state import GameState, build_game_state
@@ -22,9 +19,8 @@ OUR_COLOR = "blue"
 
 
 class ZMQBackend:
-    def __init__(self):
+    def __init__(self, color: str):
         import zmq
-
         self.zmq = zmq
         self.context = zmq.Context()
 
@@ -33,21 +29,17 @@ class ZMQBackend:
         self.vision_sub.setsockopt_string(zmq.SUBSCRIBE, "")
         self.vision_sub.setsockopt(zmq.RCVTIMEO, 100)
 
+        port = STRATEGY_PORT if color == "blue" else STRATEGY_PORT_RED
         self.strategy_pub = self.context.socket(zmq.PUB)
-        self.strategy_pub.bind(f"tcp://*:{STRATEGY_PORT}")
+        self.strategy_pub.bind(f"tcp://*:{port}")
 
-        print(
-            f"[Strategy node] ZMQ mode: connected to vision on port {VISION_PORT} and strategy on port {STRATEGY_PORT}"
-        )
+        print(f"[Strategy node] ZMQ mode: vision←:{VISION_PORT}  strategy→:{port}  color={color}")
 
     def receive_state(self) -> dict | None:
-        # Block up to RCVTIMEO (100 ms) for the first message
         try:
             raw = json.loads(self.vision_sub.recv_string())
         except self.zmq.Again:
             return None
-        # Drain any remaining buffered frames (non-blocking) so we always
-        # process the most recent state instead of falling behind.
         while True:
             try:
                 raw = json.loads(self.vision_sub.recv_string(flags=self.zmq.NOBLOCK))
@@ -61,9 +53,7 @@ class ZMQBackend:
 
 class TCPBackend:
     def __init__(self):
-        import socket
-        import time
-
+        import socket, time
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         for attempt in range(10):
             try:
@@ -71,19 +61,15 @@ class TCPBackend:
                 print(f"[StrategyNode] TCP mode: connected to localhost:{VISION_PORT}")
                 break
             except ConnectionRefusedError:
-                print(
-                    f"[StrategyNode] Connection refused, retrying ({attempt + 1}/10)..."
-                )
+                print(f"[StrategyNode] Connection refused, retrying ({attempt + 1}/10)...")
                 time.sleep(1)
         else:
-            raise ConnectionError("Could not connect to Godot after 10 attempts")
-
+            raise ConnectionError("Could not connect after 10 attempts")
         self.sock.setblocking(False)
         self.buffer = ""
 
     def receive_state(self) -> dict | None:
         import socket
-
         try:
             chunk = self.sock.recv(65536).decode()
             if not chunk:
@@ -91,7 +77,6 @@ class TCPBackend:
             self.buffer += chunk
         except (BlockingIOError, socket.error):
             pass
-
         raw = None
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
@@ -110,51 +95,26 @@ class TCPBackend:
             print("[Strategy node] TCP mode: connection lost")
 
 
-def decide(gamestate: GameState) -> dict[int, np.ndarray]:
-    # Placeholder for BT
-    # Closest Robot: attacker, intercepts ball
-    # Second Closest: defender, offset towards opponent goal
-    # Third Closest: covers own goal
-
-    targets = {}
-    ball = gamestate.ball
-    robots = sorted(gamestate.our_team, key=lambda r: distance(r.pos, ball.pos))
-
-    for i, robot in enumerate(robots):
-        if i == 0:
-            targets[robot.id] = predict_intercept_point(ball, robot, 0.9, 2.0, 20)
-        elif i == 1:
-            goal = opp_goal(OUR_COLOR)
-            to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)
-            perp = np.array([-to_goal[1], to_goal[0]])
-            targets[robot.id] = ball.pos + to_goal * 1.5 + perp * 1.0
-        else:
-            goal = our_goal(OUR_COLOR)
-            targets[robot.id] = lerp(goal, ball.pos, 0.3)
-    return targets
+def decide(gamestate: GameState) -> dict[int, dict]:
+    from BT.tree import tick
+    return tick(gamestate, OUR_COLOR)
 
 
 def main() -> None:
-    print("A")
-    parser = argparse.ArgumentParser(description="Strategy node for the RoboCup game")
-    parser.add_argument(
-        "--mode", choices=["tcp", "zmq"], default="zmq", help="Mode: tcp or zmq"
-    )
-    parser.add_argument(
-        "--color",
-        choices=["blue", "red"],
-        default="blue",
-        help="Team color: blue or red",
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["tcp", "zmq"], default="zmq")
+    parser.add_argument("--color", choices=["blue", "red"], default="blue")
     args = parser.parse_args()
 
     global OUR_COLOR
     OUR_COLOR = args.color
 
-    backend = ZMQBackend() if args.mode == "zmq" else TCPBackend()
+    if args.mode == "zmq":
+        backend = ZMQBackend(color=OUR_COLOR)
+    else:
+        backend = TCPBackend()
 
-    print(f"[Strategy node] {args.mode} mode: started")
-    print(f"[Strategy node] {args.mode} mode: Controlling {OUR_COLOR} team")
+    print(f"[Strategy node] started  mode={args.mode}  color={OUR_COLOR}")
 
     frame = 0
     while True:
@@ -167,24 +127,24 @@ def main() -> None:
             targets = decide(gamestate)
             msg = {
                 "targets": {
-                    str(rid): {"x": float(pos[0]), "y": float(pos[1])}
-                    for rid, pos in targets.items()
+                    str(rid): {
+                        "x": float(t["pos"][0]),
+                        "y": float(t["pos"][1]),
+                        "kick": t["kick"],
+                    }
+                    for rid, t in targets.items()
                 }
             }
             backend.send_targets(msg)
         except Exception as e:
-            print(f"[ERROR] {e}")
             import traceback
-
+            print(f"[ERROR] {e}")
             traceback.print_exc()
             continue
 
         frame += 1
-
         if frame % 300 == 0:
-            print(f"[Strategy node] {args.mode} mode: frame {frame}")
-            print(f"[Strategy node] possession = {gamestate.possession}")
-            print(f"ball=({gamestate.ball.pos[0]:.1f}, {gamestate.ball.pos[1]:.1f})")
+            print(f"[Strategy node] frame={frame}  possession={gamestate.possession}  ball=({gamestate.ball.pos[0]:.1f}, {gamestate.ball.pos[1]:.1f})")
 
 
 if __name__ == "__main__":

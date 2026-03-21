@@ -16,11 +16,12 @@ transfer.
 
 import math
 
-# ── ZMQ ports ────────────────────────────────────────────────────────────────
-VISION_PORT = 9090    # SimNode   → RobotNode + VizNode  (world state)
-STRATEGY_PORT = 9091  # StrategyNode → RobotNode        (autonomous targets)
-COMMAND_PORT = 9092   # RobotNode → SimNode              (wheel commands)
-MANUAL_PORT = 9093    # VizNode   → RobotNode            (manual click targets)
+# ZMQ Ports
+VISION_PORT = 9090  # SimNode   → RobotNode + VizNode  (world state)
+STRATEGY_PORT = 9091  # Reserved for blue autonomous strategy node
+STRATEGY_PORT_RED = 9094 #for red autonomous strategy node
+COMMAND_PORT = 9092  # RobotNode → SimNode  (wheel commands)
+MANUAL_PORT = 9093  # VizNode   → RobotNode (manual click targets)
 
 # ── Field geometry (meters) ──────────────────────────────────────────────────
 FIELD_W = 9.0
@@ -79,5 +80,9 @@ DISPLAY_SCALE = 100.0                # pixels per meter on the Pygame window
 DISPLAY_W = int(FIELD_W * DISPLAY_SCALE)   # 900
 DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)   # 600
 
-# ── Navigation thresholds ────────────────────────────────────────────────────
-ARRIVAL_THRESH = 5.0 / 140.0         # ≈ 0.036 m  (legacy 5 px arrival threshold)
+# Arrival threshold (meters)
+ARRIVAL_THRESH = 5.0 / 140.0  # robot.gd arrival threshold = 5 px
+
+#Goal Dimensions
+GOAL_WIDTH = 1
+GOAL_DEPTH = 0.15

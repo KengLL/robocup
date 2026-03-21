@@ -162,16 +162,18 @@ class RobotController:
         self.target: list | None = None
         self.path_length = 0.0
         self.total_time = 0.0
+        self.kick_requested: bool = False
         self._last_pos: np.ndarray | None = None
         # MANUAL mode: world-frame (vx, vy, omega) received directly from operator
         self.direct_vel: tuple | None = None
 
-    def set_target(self, x: float, y: float, mode: str | None = None) -> None:
+    def set_target(self, x: float, y: float, mode: str | None = None, kick: bool = False) -> None:
         self.target = [x, y]
         self.path_length = 0.0
         self.total_time = 0.0
         self._last_pos = None
         self.direct_vel = None
+        self.kick_requested = kick
         if mode:
             self.mode = mode
 
@@ -245,6 +247,11 @@ def main() -> None:
     strategy_sub.setsockopt_string(zmq.SUBSCRIBE, "")
     strategy_sub.setsockopt(zmq.RCVTIMEO, 0)
 
+    strategy_sub_red = ctx.socket(zmq.SUB)
+    strategy_sub_red.connect(f"tcp://localhost:{STRATEGY_PORT_RED}")
+    strategy_sub_red.setsockopt_string(zmq.SUBSCRIBE, "")
+    strategy_sub_red.setsockopt(zmq.RCVTIMEO, 0)
+
     cmd_push = ctx.socket(zmq.PUSH)
     cmd_push.connect(f"tcp://localhost:{COMMAND_PORT}")
 
@@ -258,13 +265,15 @@ def main() -> None:
         # Drain strategy targets first (non-blocking), only if enabled
         if strategy_enabled:
             _drain_targets(strategy_sub, robots, zmq)
+            _drain_targets(strategy_sub_red, robots, zmq)
         else:
-            # Still drain the socket so messages don't pile up
-            while True:
-                try:
-                    strategy_sub.recv_string()
-                except zmq.Again:
-                    break
+            # Still drain both sockets so messages don't pile up
+            for sub in [strategy_sub, strategy_sub_red]:
+                while True:
+                    try:
+                        sub.recv_string()
+                    except zmq.Again:
+                        break
 
         # Drain manual targets / direct-velocity commands second so mouse
         # clicks and WASD/gamepad override strategy
@@ -319,9 +328,11 @@ def main() -> None:
                     {
                         "robot_id": robot.id,
                         "wheel_speeds": wheel_speeds,
+                        "kick": robot.kick_requested,
                     }
                 )
             )
+            robot.kick_requested = False
 
 
 # drain all pending target messages from a SUB socket.
@@ -337,6 +348,7 @@ def _drain_targets(sub_socket, robots, zmq_module):
                         info["x"],
                         info["y"],
                         info.get("mode", "2005_INVERSION"),
+                        kick=info.get("kick", False),
                     )
         except zmq_module.Again:
             break

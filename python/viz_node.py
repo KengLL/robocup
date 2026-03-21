@@ -38,6 +38,8 @@ from config import (
     ROBOT_RADIUS,
     VISION_PORT,
     WHEEL_ANGLES,
+    GOAL_DEPTH, 
+    GOAL_WIDTH
 )
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -347,6 +349,21 @@ def draw_hud(
     sy = y0 + (HUD_H - 5 * pixel) // 2
     draw_pixel_text(surf, strat_label, sx, sy, strat_color, pixel=pixel, spacing=1)
 
+def draw_goals(surf: pygame.Surface) -> None:
+    goal_depth_px = int(GOAL_DEPTH * DISPLAY_SCALE)
+    goal_width_px = int(GOAL_WIDTH * DISPLAY_SCALE)
+
+    # Blue goal — left edge, extends inward to the right
+    blue_top = w2s(0, FIELD_H / 2 + GOAL_WIDTH / 2)
+    blue_rect = pygame.Rect(0, blue_top[1], goal_depth_px, goal_width_px)
+    pygame.draw.rect(surf, (30, 144, 255), blue_rect, 0)  # filled
+    pygame.draw.rect(surf, C_LINE, blue_rect, 2)           # outline
+
+    # Red goal — right edge, extends inward to the left
+    red_top = w2s(FIELD_W - GOAL_DEPTH, FIELD_H / 2 + GOAL_WIDTH / 2)
+    red_rect = pygame.Rect(red_top[0], red_top[1], goal_depth_px, goal_width_px)
+    pygame.draw.rect(surf, (255, 80, 80), red_rect, 0)    # filled
+    pygame.draw.rect(surf, C_LINE, red_rect, 2)            # outline
 
 def _spawn_confetti(particles: list, team: str) -> None:
     cx, cy = w2s(FIELD_W / 2.0, FIELD_H / 2.0)
@@ -513,8 +530,6 @@ def draw_winner_screen(
 def _apply_deadzone(v: float, dz: float) -> float:
     return 0.0 if abs(v) < dz else v
 
-
-
 def main() -> None:
     pygame.init()
     pygame.joystick.init()
@@ -557,6 +572,7 @@ def main() -> None:
     confetti_particles: list = []
 
     mode_idx = 0
+    selected_robot = 0
     prev_mode_idx = 0
     strategy_enabled = False
 
@@ -596,6 +612,9 @@ def main() -> None:
                         manual_pub.send_string(json.dumps(
                             {"direct": {"0": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
                         ))
+                elif event.key == pygame.K_TAB: #change the selected manual robot
+                    selected_robot = (selected_robot + 1) % 3
+                    print(f"[VizNode] Selected robot → {selected_robot}")
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if MODES[mode_idx] != "MANUAL":
@@ -604,14 +623,14 @@ def main() -> None:
                         wx, wy = s2w(mx, my)
                         mode = MODES[mode_idx]
                         # Snapshot robot position as path start
-                        if world_state and "0" in world_state.get("robots", {}):
-                            r = world_state["robots"]["0"]
+                        if world_state and str(selected_robot) in world_state.get("robots", {}):
+                            r = world_state["robots"][str(selected_robot)]
                             path_start = (r["x"], r["y"])
                         else:
                             path_start = None
                         target_pin = (wx, wy)
                         manual_pub.send_string(
-                            json.dumps({"targets": {"0": {"x": wx, "y": wy, "mode": mode}}})
+                            json.dumps({"targets": {str(selected_robot): {"x": wx, "y": wy, "mode": mode}}})
                         )
                         print(f"[VizNode] Target → ({wx:.2f}, {wy:.2f})  [{mode}]")
 
@@ -638,7 +657,7 @@ def main() -> None:
                     w = -rx * MANUAL_MAX_OMEGA    # right stick right = clockwise = -ω
 
             manual_pub.send_string(json.dumps(
-                {"direct": {"0": {"vx": vx, "vy": vy, "w": w}}}
+                {"direct": {str(selected_robot): {"vx": vx, "vy": vy, "w": w}}}
             ))
 
         # Drain vision (keep latest frame)
@@ -686,7 +705,7 @@ def main() -> None:
 
         # Auto-clear overlay when robot arrives
         if target_pin and world_state:
-            r = world_state["robots"].get("0")
+            r = world_state["robots"].get(str(selected_robot))
             if r:
                 dist = math.hypot(r["x"] - target_pin[0], r["y"] - target_pin[1])
                 if dist < ARRIVAL_THRESH:
@@ -695,6 +714,7 @@ def main() -> None:
 
         # ── Draw ──────────────────────────────────────────────────────────────
         draw_field(screen)
+        draw_goals(screen)
 
         # Dotted path + pin (drawn before robot so robot renders on top)
         if target_pin:
@@ -714,6 +734,10 @@ def main() -> None:
             for rid, r in world_state.get("robots", {}).items():
                 c = (30, 144, 255) if int(rid) < 3 else (255, 80, 80)
                 draw_robot(screen, r["x"], r["y"], r["angle"], c)
+                if int(rid) == selected_robot:
+                    cx, cy = w2s(r["x"], r["y"])
+                    r_px = max(4, int(ROBOT_RADIUS * DISPLAY_SCALE))
+                    pygame.draw.circle(screen, (255, 255, 0), (cx, cy), r_px + 4, 2)
 
             b = world_state.get("ball")
             if b:
