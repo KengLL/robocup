@@ -33,6 +33,23 @@ def _rot2d(v: np.ndarray, angle: float) -> np.ndarray:
     return np.array([c * v[0] - s * v[1], s * v[0] + c * v[1]])
 
 
+def _angle_wrap(a: float) -> float:
+    """Wrap an angle error into (-π, π]."""
+    return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _heading_omega(current: float, target: float | None, gain: float) -> float:
+    """
+    Proportional heading control. Returns 0 when no target heading is
+    given — the robot keeps its current orientation and relies on the
+    (real) dynamics / friction to resist drift, instead of being magnetically
+    snapped back to world angle = 0 as the Godot port used to do.
+    """
+    if target is None:
+        return 0.0
+    return _angle_wrap(target - current) * gain
+
+
 def _inverse_kinematics(vx: float, vy: float, w: float) -> list:
     """
     Local body-frame velocity (vx, vy, ω) → normalised wheel speeds.
@@ -56,6 +73,7 @@ def _ctrl_dynamic_inversion(
     target: np.ndarray,
     velocity: np.ndarray,
     angle: float,
+    target_angle: float | None = None,
 ) -> tuple:
     """
     robot.gd calculate_dynamic_inversion()
@@ -64,7 +82,7 @@ def _ctrl_dynamic_inversion(
     error = target - pos
     desired_accel = error * KP - velocity * KD
     local_accel = _rot2d(desired_accel, -angle)
-    desired_omega = (0.0 - angle) * 10.0
+    desired_omega = _heading_omega(angle, target_angle, 10.0)
     return local_accel[0], local_accel[1], desired_omega
 
 
@@ -73,6 +91,7 @@ def _ctrl_mpc_rollout(
     target: np.ndarray,
     velocity: np.ndarray,
     angle: float,
+    target_angle: float | None = None,
 ) -> tuple:
     """
     robot.gd calculate_mpc_rollout()
@@ -106,7 +125,7 @@ def _ctrl_mpc_rollout(
             lowest_cost = cost
             best_input = inp
 
-    desired_omega = (0.0 - angle) * 10.0
+    desired_omega = _heading_omega(angle, target_angle, 10.0)
     return best_input[0], best_input[1], desired_omega
 
 
@@ -115,6 +134,7 @@ def _ctrl_time_optimal(
     target: np.ndarray,
     velocity: np.ndarray,
     angle: float,
+    target_angle: float | None = None,
 ) -> tuple:
     """
     robot.gd calculate_time_optimal_2005()
@@ -136,7 +156,7 @@ def _ctrl_time_optimal(
         desired_velocity = direction * math.sqrt(max(0.0, 2.0 * a_max * dist))
 
     local_v = _rot2d(desired_velocity, -angle)
-    desired_omega = (0.0 - angle) * 5.0
+    desired_omega = _heading_omega(angle, target_angle, 5.0)
     return local_v[0], local_v[1], desired_omega
 
 
@@ -158,14 +178,22 @@ class RobotController:
         self.id = robot_id
         self.mode = mode
         self.target: list | None = None
+        self.target_angle: float | None = None
         self.path_length = 0.0
         self.total_time = 0.0
         self._last_pos: np.ndarray | None = None
         # MANUAL mode: world-frame (vx, vy, omega) received directly from operator
         self.direct_vel: tuple | None = None
 
-    def set_target(self, x: float, y: float, mode: str | None = None) -> None:
+    def set_target(
+        self,
+        x: float,
+        y: float,
+        mode: str | None = None,
+        theta: float | None = None,
+    ) -> None:
         self.target = [x, y]
+        self.target_angle = theta
         self.path_length = 0.0
         self.total_time = 0.0
         self._last_pos = None
@@ -176,8 +204,9 @@ class RobotController:
     def set_direct_vel(self, vx: float, vy: float, w: float) -> None:
         """Switch to MANUAL mode and set world-frame velocity command."""
         self.direct_vel = (vx, vy, w)
-        self.mode       = "MANUAL"
-        self.target     = None
+        self.mode = "MANUAL"
+        self.target = None
+        self.target_angle = None
 
     def compute_wheels(self, rstate: dict) -> list:
         """Given robot state dict, return normalised wheel speeds [w0,w1,w2]."""
@@ -213,10 +242,11 @@ class RobotController:
                 f"avg_speed={avg:.2f} m/s"
             )
             self.target = None
+            self.target_angle = None
             return [0.0, 0.0, 0.0]
 
         ctrl = _CONTROLLERS[self.mode]
-        vx, vy, w = ctrl(pos, tgt, vel, angle)
+        vx, vy, w = ctrl(pos, tgt, vel, angle, self.target_angle)
         return _inverse_kinematics(vx, vy, w)
 
 
@@ -283,6 +313,7 @@ def main() -> None:
                         robots[i].set_target(
                             info["x"], info["y"],
                             info.get("mode", "2005_INVERSION"),
+                            theta=info.get("theta"),
                         )
 
                 for rid_str, vel in data.get("direct", {}).items():
@@ -342,6 +373,7 @@ def _drain_targets(sub_socket, robots, zmq_module):
                         info["x"],
                         info["y"],
                         info.get("mode", "2005_INVERSION"),
+                        theta=info.get("theta"),
                     )
         except zmq_module.Again:
             break
