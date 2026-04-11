@@ -71,7 +71,7 @@ def _make_robot(
 def _add_walls(space: pymunk.Space) -> None:
     # bottom wall
     seg = pymunk.Segment(space.static_body, (0, 0), (FIELD_W, 0), 0.02)
-    seg.elasticity = 0.8
+    seg.elasticity = 1.0
     seg.friction = 0.5
     space.add(seg)
 
@@ -107,8 +107,8 @@ def _make_ball(space: pymunk.Space, x: float, y: float) -> pymunk.Body:
     body = pymunk.Body(BALL_MASS, moment)
     body.position = (x, y)
     shape = pymunk.Circle(body, BALL_RADIUS)
-    shape.elasticity = 0.6
-    shape.friction = 0.4
+    shape.elasticity = 1.0
+    shape.friction = 0.2
     shape.collision_type = COLLISION_BALL
     space.add(body, shape)
     return body
@@ -231,6 +231,13 @@ def main() -> None:
         commands[str(i)]["kick"] = False  # reset after one frame
 
         space.step(DT)
+
+        # handle robots going off screen
+        for body in robots:
+            x, y = body.position
+            x = max(ROBOT_RADIUS, min(FIELD_W - ROBOT_RADIUS, x))
+            y = max(ROBOT_RADIUS, min(FIELD_H - ROBOT_RADIUS, y))
+            body.position = (x, y)
 
         bx = ball.position.x
         by = ball.position.y

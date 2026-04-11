@@ -2,6 +2,7 @@ import numpy as np
 from geometry import distance, opp_goal, our_goal, is_blocking
 from prediction import predict_intercept_point
 from state import GameState, RobotState, get_obstacles
+from BT.conditions import avoid_teammates
 
 SUPPORT_DISTANCE = 1.5
 SUPPORT_WIDTH = 1.2
@@ -43,16 +44,13 @@ def supporter_decide(robot, gamestate, color):
         support_pos = _support_position(ball.pos, goal, side)
         if is_blocking(ball.pos, support_pos, obstacles, radius=0.3):
             support_pos = _support_position(ball.pos, goal, side * -1)
-        print(f"[Supporter {robot.id}] GET OPEN")
-        return support_pos, False
+        return avoid_teammates(_clamp_to_field(support_pos), robot, gamestate), False
 
     if gamestate.possession == "loose":
         dist_to_ball = distance(robot.pos, ball.pos)
         if dist_to_ball < 1.0:
-            print(f"[Supporter {robot.id}] CHASE LOOSE BALL")
-            return _clamp_to_field(predict_intercept_point(ball, robot, 0.9, 2.0, 20)), False
-        print(f"[Supporter {robot.id}] ADVANCE")
-        return _support_position(ball.pos, goal, side), False
+            return avoid_teammates(_clamp_to_field(predict_intercept_point(ball, robot, 0.9, 2.0, 20)), robot, gamestate), False
+        return avoid_teammates(_support_position(ball.pos, goal, side), robot, gamestate), False
 
     # opponent has ball — drop back between ball and our goal
     own_goal = our_goal(color)
@@ -63,5 +61,4 @@ def supporter_decide(robot, gamestate, color):
     direction = to_own_goal / dist
     perp = np.array([-direction[1], direction[0]])
     safe_pos = ball.pos + direction * (dist * 0.5) + perp * SUPPORT_WIDTH * side
-    print(f"[Supporter {robot.id}] DROP BACK")
-    return _clamp_to_field(safe_pos), False
+    return avoid_teammates(_clamp_to_field(safe_pos), robot, gamestate), False

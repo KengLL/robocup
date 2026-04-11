@@ -27,7 +27,7 @@ WHEEL_ANGLES = [0.0, 2 * math.pi / 3, 4 * math.pi / 3]
 # Ball — SSL-standard specs (not currently simulated)
 BALL_RADIUS = 0.043  # 43 mm diameter
 BALL_MASS = 0.046  # 46 g
-BALL_DAMP = 0.5
+BALL_DAMP = 0.2
 
 # Physics damping (matches robot.gd linear_damp=3, angular_damp=3)
 LINEAR_DAMP = 3.0

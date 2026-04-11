@@ -5,16 +5,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from geometry import opp_goal
 from state import GameState, RobotState
-from BT.conditions import best_shot_target, teammate_open
+from BT.conditions import best_shot_target, teammate_open, avoid_teammates, MIN_ROBOT_SEPARATION
 
 KICK_DIST = 0.15
 BEHIND_DIST = 0.5
 BEHIND_THRESH = 0.2
+JUST_KICK_DIST = 0.3  # if ball is this close, skip all logic and just shoot
 
-_state = {"mode": "CHASE"}
+# per-robot state keyed by robot id to avoid shared state between teams
+_states = {}
+
+def _get_state(robot_id):
+    if robot_id not in _states:
+        _states[robot_id] = {"mode": "CHASE", "shot_target": None, "pass_target": None}
+    return _states[robot_id]
 
 def _behind_ball(ball_pos, shoot_target):
-    """Get position behind ball relative to shoot target."""
     to_target = shoot_target - ball_pos
     dist = np.linalg.norm(to_target)
     if dist < 1e-6:
@@ -28,126 +34,111 @@ def attacker_decide(robot: RobotState, gamestate: GameState, color: str) -> tupl
     teammates = [r for r in gamestate.our_team if r.id != robot.id]
     dist_to_ball = float(np.linalg.norm(robot.pos - ball.pos))
 
+    state = _get_state(robot.id)
+
+    # ── if ball is right there, just kick regardless of everything ──────────
+    if dist_to_ball < JUST_KICK_DIST:
+        state["mode"] = "CHASE"
+        return goal.copy(), True
+
     if dist_to_ball > 3.0:
-        _state["mode"] = "CHASE"
+        state["mode"] = "CHASE"
 
-    # CHASE — get close to ball
-    if _state["mode"] == "CHASE":
+    # CHASE — get close to ball, only avoid teammates if not very close to ball
+    if state["mode"] == "CHASE":
         if dist_to_ball < 0.6:
-            _state["mode"] = "DECIDE"
-        print(f"[Attacker {robot.id}] CHASE")
-        return ball.pos.copy(), False
+            state["mode"] = "DECIDE"
+        target = ball.pos.copy()
+        if dist_to_ball > 0.8:  # only nudge away from teammates when not close to ball
+            for tm in teammates:
+                diff = target - tm.pos
+                dist = np.linalg.norm(diff)
+                if dist < MIN_ROBOT_SEPARATION and dist > 1e-6:
+                    target += (diff / dist) * (MIN_ROBOT_SEPARATION - dist)
+        return target, False
 
-    # DECIDE — conditions.py figures out what to do
-    if _state["mode"] == "DECIDE":
+    # DECIDE — pick action, but if nothing works just shoot anyway
+    if state["mode"] == "DECIDE":
         if dist_to_ball > 1.0:
-            _state["mode"] = "CHASE"
+            state["mode"] = "CHASE"
             return ball.pos.copy(), False
 
-        # ask conditions.py for the best open angle on goal
-        shot_target = best_shot_target(robot, opponents, goal)
+        shot_target = state.get("shot_target") if state.get("shot_target") is not None else goal
 
-        if shot_target is not None:
-            # there IS an open angle — store it and line up
-            _state["mode"] = "SHOOT"
-            _state["shot_target"] = shot_target
-            print(f"[Attacker {robot.id}] → SHOOT (open angle found)")
+        if shot_target is not None or dist_to_ball < 0.3:
+            state["mode"] = "SHOOT"
+            state["shot_target"] = shot_target if shot_target is not None else goal
         else:
-            # no open shot — check if we can pass
             open_teammate = next(
                 (tm for tm in teammates if teammate_open(robot, tm, opponents)),
                 None
             )
             if open_teammate is not None:
-                _state["mode"] = "PASS"
-                _state["pass_target"] = open_teammate.pos.copy()
-                print(f"[Attacker {robot.id}] → PASS to {open_teammate.id}")
+                state["mode"] = "PASS"
+                state["pass_target"] = open_teammate.pos.copy()
             else:
-                # nothing open — reposition around ball
-                _state["mode"] = "REPOSITION"
-                print(f"[Attacker {robot.id}] → REPOSITION")
+                # no clear shot or pass — just shoot anyway rather than reposition
+                state["mode"] = "SHOOT"
+                state["shot_target"] = goal.copy()
 
         return ball.pos.copy(), False
 
-    # SHOOT — line up behind ball toward open angle, then kick
-    if _state["mode"] == "SHOOT":
+    # SHOOT — line up behind ball
+    if state["mode"] == "SHOOT":
         if dist_to_ball > 1.5:
-            _state["mode"] = "CHASE"
+            state["mode"] = "CHASE"
             return ball.pos.copy(), False
 
-        shot_target = _state.get("shot_target", goal)
+        shot_target = state.get("shot_target") if state.get("shot_target") is not None else goal
         behind = _behind_ball(ball.pos, shot_target)
         dist_to_behind = float(np.linalg.norm(robot.pos - behind))
 
-        if dist_to_behind < BEHIND_THRESH:
-            _state["mode"] = "KICK"
+        # check alignment — robot→ball direction should point toward goal
+        to_ball = ball.pos - robot.pos
+        to_goal = shot_target - ball.pos
+        dist_tb = np.linalg.norm(to_ball)
+        dist_tg = np.linalg.norm(to_goal)
 
-        print(f"[Attacker {robot.id}] LINE UP")
+        if dist_tb > 1e-6 and dist_tg > 1e-6:
+            alignment = float(np.dot(to_ball / dist_tb, to_goal / dist_tg))
+        else:
+            alignment = 0.0
+
+        # only transition to KICK when both close enough AND aligned (dot product > 0.85 ≈ within ~30°)
+        if dist_to_behind < BEHIND_THRESH and alignment > 0.85:
+            state["mode"] = "KICK"
         return behind, False
 
-    # KICK — drive through ball
-    if _state["mode"] == "KICK":
+    # KICK — drive through ball and shoot
+    if state["mode"] == "KICK":
         if dist_to_ball > 1.0:
-            _state["mode"] = "CHASE"
+            state["mode"] = "CHASE"
             return ball.pos.copy(), False
 
         if dist_to_ball < KICK_DIST:
-            shot_target = _state.get("shot_target", goal)
-            _state["mode"] = "CHASE"
-            print(f"[Attacker {robot.id}] SHOOT")
-            return shot_target.copy(), True
+            state["mode"] = "CHASE"
+            return goal.copy(), True
 
-        print(f"[Attacker {robot.id}] DRIVE")
-        return ball.pos.copy(), False
+        # target a point past the ball toward goal so robot drives through it
+        to_goal = goal - ball.pos
+        dist_to_goal = np.linalg.norm(to_goal)
+        drive_through = ball.pos + (to_goal / (dist_to_goal + 1e-6)) * 0.4
+        return drive_through, False
 
-    # PASS — drive into ball and kick toward teammate
-    if _state["mode"] == "PASS":
+    # PASS — line up and kick toward teammate
+    if state["mode"] == "PASS":
         if dist_to_ball > 1.5:
-            _state["mode"] = "CHASE"
+            state["mode"] = "CHASE"
             return ball.pos.copy(), False
 
         if dist_to_ball < KICK_DIST:
-            pass_target = _state.get("pass_target", ball.pos)
-            _state["mode"] = "CHASE"
-            print(f"[Attacker {robot.id}] PASS")
+            pass_target = state.get("pass_target") if state.get("pass_target") is not None else ball.pos
+            state["mode"] = "CHASE"
             return pass_target.copy(), True
 
-        # line up behind ball toward teammate
-        pass_target = _state.get("pass_target", ball.pos)
+        pass_target = state.get("pass_target") or ball.pos
         behind = _behind_ball(ball.pos, pass_target)
         return behind, False
 
-    # REPOSITION — orbit to find open angle
-    if _state["mode"] == "REPOSITION":
-        if dist_to_ball > 2.0:
-            _state["mode"] = "CHASE"
-            return ball.pos.copy(), False
-
-        best_pos = None
-        best_clear = 0.0
-        for i in range(8):
-            angle = (i / 8) * 2 * np.pi
-            candidate = ball.pos + np.array([np.cos(angle), np.sin(angle)]) * BEHIND_DIST
-            from BT.conditions import best_shot_target as bst
-            class FakeRobot:
-                pos = candidate
-            shot = bst(FakeRobot(), opponents, goal)
-            if shot is not None:
-                dist = float(np.linalg.norm(robot.pos - candidate))
-                score = 1.0 / (dist + 0.1)
-                if score > best_clear:
-                    best_clear = score
-                    best_pos = candidate
-
-        if best_pos is not None:
-            dist_to_best = float(np.linalg.norm(robot.pos - best_pos))
-            if dist_to_best < BEHIND_THRESH:
-                _state["mode"] = "DECIDE"
-            print(f"[Attacker {robot.id}] REPOSITION")
-            return best_pos, False
-
-        _state["mode"] = "DECIDE"
-        return ball.pos.copy(), False
-
-    _state["mode"] = "CHASE"
+    state["mode"] = "CHASE"
     return ball.pos.copy(), False
