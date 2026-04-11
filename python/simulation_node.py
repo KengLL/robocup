@@ -28,6 +28,11 @@ COLLISION_ROBOT = 1
 COLLISION_BALL = 2
 COLLISION_WALL = 3
 
+# Goal mouth matches legacy Godot scene: 200 px at 140 px/m.
+GOAL_MOUTH_H = 200.0 / PX_PER_METER
+GOAL_Y_MIN = (FIELD_H - GOAL_MOUTH_H) / 2.0
+GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
+
 
 def _make_robot(
     space: pymunk.Space, x: float, y: float, angle: float = 0.0
@@ -44,9 +49,21 @@ def _make_robot(
 
 
 def _add_walls(space: pymunk.Space) -> None:
-    corners = [(0, 0), (FIELD_W, 0), (FIELD_W, FIELD_H), (0, FIELD_H)]
-    for i in range(4):
-        a, b = corners[i], corners[(i + 1) % 4]
+    # Top and bottom touchlines.
+    segments = [
+        ((0.0, 0.0), (FIELD_W, 0.0)),
+        ((0.0, FIELD_H), (FIELD_W, FIELD_H)),
+    ]
+
+    # Left and right sidelines with a central opening (goal mouth).
+    segments += [
+        ((0.0, 0.0), (0.0, GOAL_Y_MIN)),
+        ((0.0, GOAL_Y_MAX), (0.0, FIELD_H)),
+        ((FIELD_W, 0.0), (FIELD_W, GOAL_Y_MIN)),
+        ((FIELD_W, GOAL_Y_MAX), (FIELD_W, FIELD_H)),
+    ]
+
+    for a, b in segments:
         seg = pymunk.Segment(space.static_body, a, b, 0.02)
         seg.elasticity = 0.8
         seg.friction = 0.5
@@ -105,6 +122,23 @@ def _apply_wheel_commands(body: pymunk.Body, wheel_speeds: list) -> None:
     body.torque += total_torque
 
 
+def _scoring_team(ball: pymunk.Body) -> str | None:
+    y = ball.position.y
+    if y < GOAL_Y_MIN or y > GOAL_Y_MAX:
+        return None
+    if ball.position.x <= 0.0:
+        return "blue"
+    if ball.position.x >= FIELD_W:
+        return "red"
+    return None
+
+
+def _reset_ball_to_center(ball: pymunk.Body) -> None:
+    ball.velocity = (0.0, 0.0)
+    ball.angular_velocity = 0.0
+    ball.position = (FIELD_W / 2.0, FIELD_H / 2.0)
+
+
 def main() -> None:
     space = pymunk.Space()
     space.gravity = (0, 0)
@@ -134,6 +168,9 @@ def main() -> None:
     pull.setsockopt(zmq.RCVTIMEO, 0)  # non-blocking
 
     commands: dict[str, list] = {str(i): [0.0, 0.0, 0.0] for i in range(NUM_ROBOTS)}
+    score = {"blue": 0, "red": 0}
+    last_goal: dict | None = None
+    goal_seq = 0
 
     print(f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}")
 
@@ -158,9 +195,27 @@ def main() -> None:
 
         space.step(DT)
 
+        scoring_team = _scoring_team(ball)
+        if scoring_team is not None:
+            score[scoring_team] += 1
+            goal_seq += 1
+            _reset_ball_to_center(ball)
+            last_goal = {
+                "seq": goal_seq,
+                "team": scoring_team,
+                "score": {"blue": score["blue"], "red": score["red"]},
+                "t": time.time(),
+            }
+            print(
+                f"[SimNode] GOAL {scoring_team.upper()}  "
+                f"score {score['blue']}-{score['red']}"
+            )
+
         # Publish world state
         state = {
             "t": time.time(),
+            "score": {"blue": score["blue"], "red": score["red"]},
+            "last_goal": last_goal,
             "ball": {
                 "x": ball.position.x,
                 "y": ball.position.y,
