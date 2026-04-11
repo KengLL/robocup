@@ -1,53 +1,83 @@
+"""
+Shared configuration constants for the RoboCup pipeline.
+
+All physical quantities are in SI units (meters, seconds, kilograms,
+newtons, radians) unless a comment explicitly says otherwise. The two
+exceptions are DISPLAY_* values (screen pixels for the Pygame window)
+and port numbers.
+
+IMPORTANT: several of the robot-hardware values below were inherited
+from the original Godot demo scene (test_iterative.tscn), which used a
+coordinate system of 140 px per meter. They have been converted to SI
+but NOT re-measured against real hardware — grep for `TODO(hardware)`
+for the list of values that must be calibrated before sim-to-real
+transfer.
+"""
+
 import math
 
-# ZMQ Ports
-VISION_PORT = 9090  # SimNode   → RobotNode + VizNode  (world state)
-STRATEGY_PORT = 9091  # Reserved for autonomous strategy node (not yet implemented)
-COMMAND_PORT = 9092  # RobotNode → SimNode  (wheel commands)
-MANUAL_PORT = 9093  # VizNode   → RobotNode (manual click targets)
+# ── ZMQ ports ────────────────────────────────────────────────────────────────
+VISION_PORT = 9090    # SimNode   → RobotNode + VizNode  (world state)
+STRATEGY_PORT = 9091  # StrategyNode → RobotNode        (autonomous targets)
+COMMAND_PORT = 9092   # RobotNode → SimNode              (wheel commands)
+MANUAL_PORT = 9093    # VizNode   → RobotNode            (manual click targets)
 
-# Field (SSL-EV, meters)
+# ── Field geometry (meters) ──────────────────────────────────────────────────
 FIELD_W = 9.0
 FIELD_H = 6.0
 
-# Unit conversion from the Godot iterative scene (test_iterative.tscn):
-# field size 1240x840 px and 6.0 m height ⇒ 140 px/m.
-PX_PER_METER = 140.0
+# Goal mouth height (meters). The opening centered on each short side of the
+# field that the ball must cross to score. Previously duplicated between
+# simulation_node.py and viz_node.py.
+# TODO(hardware): real SSL Div-B goals are 1.0 m wide; SSL-EV is 0.8 m.
+# Pick one standard for your target league before training.
+GOAL_MOUTH_H = 200.0 / 140.0  # ≈ 1.43 m (legacy Godot demo value)
+GOAL_Y_MIN = (FIELD_H - GOAL_MOUTH_H) / 2.0
+GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
 
-# Robot hardware (translated from robot.gd, scaled to meters)
+# ── Team composition ─────────────────────────────────────────────────────────
 NUM_ROBOTS = 6
-TEAM_S = 3
-ROBOT_RADIUS = 20.0 / PX_PER_METER  # robot.gd draw radius = 20 px
-ROBOT_MASS = 0.8  # test_iterative.tscn Robot mass
-WHEEL_DISTANCE = 15.0 / PX_PER_METER  # robot.gd wheel_distance = 15 px
-MOTOR_MAX_FORCE = 200.0 / PX_PER_METER  # robot.gd force in px-units → SI-scaled
+TEAM_S = 3  # robots per team
+
+# ── Robot hardware (SI units) ────────────────────────────────────────────────
+# TODO(hardware): the four values below came from the Godot demo scene
+# (140 px/m). They are DIMENSIONALLY correct (meters, kilograms, newtons)
+# but NUMERICALLY arbitrary and must be re-measured from the real robot.
+ROBOT_RADIUS = 20.0 / 140.0          # ≈ 0.143 m
+ROBOT_MASS = 0.8                     # kg
+WHEEL_DISTANCE = 15.0 / 140.0        # ≈ 0.107 m, radius of wheel placement circle
+MOTOR_MAX_FORCE = 200.0 / 140.0      # ≈ 1.429 N per wheel at full command
 WHEEL_ANGLES = [0.0, 2 * math.pi / 3, 4 * math.pi / 3]
 
-# Ball — SSL-standard specs (not currently simulated)
-BALL_RADIUS = 0.043  # 43 mm diameter
-BALL_MASS = 0.046  # 46 g
-BALL_DAMP = 0.5
+# ── Ball (SI units) ──────────────────────────────────────────────────────────
+# TODO(hardware): real SSL golf ball is 0.0215 m radius / 46 g. The radius
+# value below does not match the comment and needs to be reconciled.
+BALL_RADIUS = 0.043                  # meters (comment in source claims 43 mm diameter)
+BALL_MASS = 0.046                    # kg (46 g, SSL standard)
+BALL_DAMP = 0.5                      # per-second manual velocity damping coefficient
 
-# Physics damping (matches robot.gd linear_damp=3, angular_damp=3)
+# ── Physics damping (per-second coefficients) ────────────────────────────────
+# TODO(hardware): these are lumped Godot-style damping, not real rolling
+# friction. Replace with a measured coastdown curve for the real robot.
 LINEAR_DAMP = 3.0
 ANGULAR_DAMP = 3.0
 
-# Control gains (Dynamic Inversion — robot.gd kp=15, kd=5)
+# ── Low-level controller gains (robot_node.py) ───────────────────────────────
 KP = 15.0
 KD = 5.0
 
-# MPC (robot.gd mpc_horizon=10, mpc_dt=0.016)
+# MPC rollout horizon (robot_node.py greedy MPC controller)
 MPC_HORIZON = 10
 MPC_DT = 0.016
 
-# Simulation timing
+# ── Simulation timing ────────────────────────────────────────────────────────
 FPS = 60
 DT = 1.0 / FPS
 
-# Display
-DISPLAY_SCALE = 100.0
-DISPLAY_W = int(FIELD_W * DISPLAY_SCALE)  # 900
-DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)  # 600
+# ── Display (pixels — viz_node only) ─────────────────────────────────────────
+DISPLAY_SCALE = 100.0                # pixels per meter on the Pygame window
+DISPLAY_W = int(FIELD_W * DISPLAY_SCALE)   # 900
+DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)   # 600
 
-# Arrival threshold (meters)
-ARRIVAL_THRESH = 5.0 / PX_PER_METER  # robot.gd arrival threshold = 5 px
+# ── Navigation thresholds ────────────────────────────────────────────────────
+ARRIVAL_THRESH = 5.0 / 140.0         # ≈ 0.036 m  (legacy 5 px arrival threshold)
