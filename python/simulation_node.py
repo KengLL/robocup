@@ -7,11 +7,25 @@ Receives robot wheel-speed commands on COMMAND_PORT (ZMQ PULL).
 
 In real-world deployment, swap this node for a Vision Node that reads
 AprilTag data — the rest of the pipeline stays identical.
+
+CLI flags:
+  --headless   Do not sleep at the end of each tick. The physics loop
+               advances as fast as the CPU allows. Useful for CI and
+               (eventually) RL training.
+  --seed INT   Seed Python's `random` module and numpy RNG for
+               reproducibility. When set, initial robot positions are
+               jittered by a small Gaussian so repeated runs at the
+               same seed are identical but runs at different seeds
+               explore slightly different starting states. When unset
+               (default), spawn positions and behavior are exactly
+               identical to pre-flag runs.
 """
 
+import argparse
 import json
 import math
 import os
+import random
 import sys
 import time
 
@@ -179,23 +193,66 @@ def _try_kick_ball(robot: pymunk.Body, ball: pymunk.Body) -> bool:
     return True
 
 
+#: Per-axis standard deviation (meters) of the Gaussian jitter applied
+#: to initial robot positions when a seed is provided. Small enough that
+#: the nominal formation still makes sense; large enough that policies
+#: cannot memorize exact spawn locations.
+SPAWN_JITTER_STD = 0.10
+
+
+def _jittered(
+    rng: random.Random | None, x: float, y: float
+) -> tuple[float, float]:
+    if rng is None:
+        return x, y
+    return (
+        x + rng.gauss(0.0, SPAWN_JITTER_STD),
+        y + rng.gauss(0.0, SPAWN_JITTER_STD),
+    )
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="RoboCup simulation node")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run the physics loop as fast as the CPU allows (no tick sleep).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed for random / numpy.random. Also enables Gaussian jitter "
+             "of initial robot positions for domain randomization.",
+    )
+    args = parser.parse_args()
+
+    rng: random.Random | None = None
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        rng = random.Random(args.seed)
+        print(f"[SimNode] seed = {args.seed}  (spawn jitter enabled)")
+
     space = pymunk.Space()
     space.gravity = (0, 0)
     _add_walls(space)
 
     # blue team (robots 0-2) — left side
     # red team (robots 3-5) — right side
-    robots = [
-        # Blue team
-        _make_robot(space, 2.0, 3.0, 0.0),  # 0: blue attacker
-        _make_robot(space, 1.5, 4.5, 0.0),  # 1: blue supporter
-        _make_robot(space, 0.8, 3.0, 0.0),  # 2: blue defender
-        # Red team
-        _make_robot(space, 7.0, 3.0, math.pi),  # 3: red attacker
-        _make_robot(space, 7.5, 1.5, math.pi),  # 4: red supporter
-        _make_robot(space, 8.2, 3.0, math.pi),  # 5: red defender
+    nominal_spawns = [
+        # (x, y, angle, label)
+        (2.0, 3.0, 0.0,      "blue attacker"),
+        (1.5, 4.5, 0.0,      "blue supporter"),
+        (0.8, 3.0, 0.0,      "blue defender"),
+        (7.0, 3.0, math.pi,  "red attacker"),
+        (7.5, 1.5, math.pi,  "red supporter"),
+        (8.2, 3.0, math.pi,  "red defender"),
     ]
+    robots = []
+    for x, y, angle, _label in nominal_spawns:
+        jx, jy = _jittered(rng, x, y)
+        robots.append(_make_robot(space, jx, jy, angle))
 
     ball = _make_ball(space, FIELD_W / 2, FIELD_H / 2)
 
@@ -212,8 +269,12 @@ def main() -> None:
     score = {"blue": 0, "red": 0}
     last_goal: dict | None = None
     goal_seq = 0
+    sim_time = 0.0  # seconds of simulated physics, independent of wall clock
 
-    print(f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}")
+    print(
+        f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}"
+        f"   headless={args.headless}"
+    )
 
     while True:
         t0 = time.perf_counter()
@@ -250,6 +311,7 @@ def main() -> None:
         _apply_damping_custom(ball, BALL_DAMP, BALL_DAMP, DT)
 
         space.step(DT)
+        sim_time += DT
 
         scoring_team = _scoring_team(ball)
         if scoring_team is not None:
@@ -260,7 +322,7 @@ def main() -> None:
                 "seq": goal_seq,
                 "team": scoring_team,
                 "score": {"blue": score["blue"], "red": score["red"]},
-                "t": time.time(),
+                "t": sim_time,
             }
             print(
                 f"[SimNode] GOAL {scoring_team.upper()}  "
@@ -269,7 +331,7 @@ def main() -> None:
 
         # Publish world state
         state = {
-            "t": time.time(),
+            "t": sim_time,
             "score": {"blue": score["blue"], "red": score["red"]},
             "last_goal": last_goal,
             "ball": {
@@ -292,9 +354,10 @@ def main() -> None:
         }
         pub.send_string(json.dumps(state))
 
-        sleep_t = DT - (time.perf_counter() - t0)
-        if sleep_t > 0:
-            time.sleep(sleep_t)
+        if not args.headless:
+            sleep_t = DT - (time.perf_counter() - t0)
+            if sleep_t > 0:
+                time.sleep(sleep_t)
 
 
 if __name__ == "__main__":
