@@ -294,6 +294,13 @@ def main() -> None:
                     if 0 <= i < NUM_ROBOTS:
                         robots[i].set_direct_vel(vel["vx"], vel["vy"], vel["w"])
 
+                for rid_str in data.get("kick", {}):
+                    i = int(rid_str)
+                    if 0 <= i < NUM_ROBOTS:
+                        cmd_push.send_string(
+                            json.dumps({"type": "kick", "robot_id": i})
+                        )
+
             except zmq.Again:
                 break
 

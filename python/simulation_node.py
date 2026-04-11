@@ -34,8 +34,8 @@ import pymunk
 import zmq
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
-sys.path.insert(0, os.path.dirname(_HERE))  # project root for config
+sys.path.insert(0, os.path.dirname(_HERE))  # project root (for decision_making.*)
+sys.path.insert(0, _HERE)                   # python/ takes priority for config
 from config import *
 
 # collision types
@@ -47,10 +47,7 @@ COLLISION_WALL = 3
 # Goal mouth geometry is defined in config.py (GOAL_MOUTH_H, GOAL_Y_MIN,
 # GOAL_Y_MAX) so viz and sim share one source of truth.
 
-# Kick model: small rectangular contact zone in front of robot.
-KICK_ZONE_DEPTH = 0.12
-KICK_ZONE_HALF_WIDTH = 0.10
-KICK_IMPULSE = 0.22
+from decision_making.skills.kick import try_kick_ball
 
 
 def _make_robot(
@@ -174,25 +171,6 @@ def _reset_ball_to_center(ball: pymunk.Body) -> None:
     ball.position = (FIELD_W / 2.0, FIELD_H / 2.0)
 
 
-def _try_kick_ball(robot: pymunk.Body, ball: pymunk.Body) -> bool:
-    """Kick if ball is in a small front tangent zone of the robot."""
-    dx = ball.position.x - robot.position.x
-    dy = ball.position.y - robot.position.y
-    a = robot.angle
-
-    # World -> robot local frame where +x is robot forward.
-    local_x = math.cos(a) * dx + math.sin(a) * dy
-    local_y = -math.sin(a) * dx + math.cos(a) * dy
-
-    zone_min_x = ROBOT_RADIUS
-    zone_max_x = ROBOT_RADIUS + KICK_ZONE_DEPTH
-    in_zone = zone_min_x <= local_x <= zone_max_x and abs(local_y) <= KICK_ZONE_HALF_WIDTH
-    if not in_zone:
-        return False
-
-    impulse = (math.cos(a) * KICK_IMPULSE, math.sin(a) * KICK_IMPULSE)
-    ball.apply_impulse_at_world_point(impulse, ball.position)
-    return True
 
 
 #: Per-axis standard deviation (meters) of the Gaussian jitter applied
@@ -305,7 +283,7 @@ def main() -> None:
 
         if pending_kicks:
             for rid in pending_kicks:
-                kicked = _try_kick_ball(robots[rid], ball)
+                kicked = try_kick_ball(robots[rid], ball)
                 if kicked:
                     print(f"[SimNode] Kick by robot {rid}")
             pending_kicks.clear()
