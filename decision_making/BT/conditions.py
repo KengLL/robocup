@@ -8,7 +8,6 @@ from geometry import can_pass_ball, point_to_line_distance
 from state import RobotState
 
 GOAL_WIDTH = 1.0
-MIN_ROBOT_SEPARATION = 1.0
 
 def best_shot_target(robot: RobotState, opponents: list, goal: np.ndarray) -> np.ndarray | None:
     if not opponents:
