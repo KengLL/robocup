@@ -72,11 +72,13 @@ JS_AXIS_LX, JS_AXIS_LY, JS_AXIS_RX = 0, 1, 2
 HUD_H = 26
 
 PIXEL_GLYPHS = {
+    "A": ["010", "101", "111", "101", "101"],
     "P": ["111", "101", "111", "100", "100"],
     "D": ["110", "101", "101", "101", "110"],
     "T": ["111", "010", "010", "010", "010"],
     "I": ["111", "010", "010", "010", "111"],
     "M": ["101", "111", "111", "101", "101"],
+    "U": ["101", "101", "101", "101", "111"],
     "E": ["111", "100", "111", "100", "111"],
     "C": ["111", "100", "100", "100", "111"],
     "L": ["100", "100", "100", "100", "111"],
@@ -242,7 +244,7 @@ def draw_hud(surf: pygame.Surface, mode_idx: int, strategy_on: bool = False) -> 
         x += block_w + pad
 
     # Strategy toggle indicator (right side)
-    strat_label = "S ON" if strategy_on else "S OFF"
+    strat_label = "AUTO ON" if strategy_on else "AUTO OFF"
     strat_color = C_STRAT_ON if strategy_on else C_STRAT_OFF
     pixel = 2
     glyph_w = 3 * pixel
@@ -405,7 +407,7 @@ def main() -> None:
             b = world_state.get("ball")
             if b:
                 bx, by = w2s(b["x"], b["y"])
-                pygame.draw.circle(screen, (255, 255, 255), (bx, by), 5)
+                pygame.draw.circle(screen, (230, 120, 0), (bx, by), 5)
 
         draw_hud(screen, mode_idx, strategy_enabled)
 
