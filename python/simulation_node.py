@@ -51,25 +51,41 @@ def _make_robot(
     return body
 
 
-def _add_walls(space: pymunk.Space) -> None:
-    # Top and bottom touchlines.
-    segments = [
-        ((0.0, 0.0), (FIELD_W, 0.0)),
-        ((0.0, FIELD_H), (FIELD_W, FIELD_H)),
-    ]
+#: Half-thickness of the field boundary walls (meters). Must be larger
+#: than the maximum ball displacement per physics tick (|v_max| * DT)
+#: so pymunk's discrete collision detection catches fast-moving balls
+#: without needing CCD or a post-step teleport hack.
+WALL_HALF_THICKNESS = 0.10
 
-    # Left and right sidelines with a central opening (goal mouth).
-    segments += [
-        ((0.0, 0.0), (0.0, GOAL_Y_MIN)),
-        ((0.0, GOAL_Y_MAX), (0.0, FIELD_H)),
-        ((FIELD_W, 0.0), (FIELD_W, GOAL_Y_MIN)),
-        ((FIELD_W, GOAL_Y_MAX), (FIELD_W, FIELD_H)),
+
+def _add_walls(space: pymunk.Space) -> None:
+    """
+    Build the field boundary as thick static segments. Each segment's
+    center line sits `r` outside the nominal field edge and its endpoints
+    are shortened by `r` along the segment direction, so the capsule
+    collision shape's INNER surface lines up exactly with the field
+    boundary and does not protrude into the goal mouth.
+    """
+    r = WALL_HALF_THICKNESS
+
+    segments = [
+        # y=0 touchline  (center at y=-r, inner edge at y=0)
+        ((r, -r), (FIELD_W - r, -r)),
+        # y=FIELD_H touchline  (center at y=FIELD_H+r, inner edge at y=FIELD_H)
+        ((r, FIELD_H + r), (FIELD_W - r, FIELD_H + r)),
+        # x=0 sideline, framing the goal mouth
+        ((-r, r), (-r, GOAL_Y_MIN - r)),
+        ((-r, GOAL_Y_MAX + r), (-r, FIELD_H - r)),
+        # x=FIELD_W sideline, framing the goal mouth
+        ((FIELD_W + r, r), (FIELD_W + r, GOAL_Y_MIN - r)),
+        ((FIELD_W + r, GOAL_Y_MAX + r), (FIELD_W + r, FIELD_H - r)),
     ]
 
     for a, b in segments:
-        seg = pymunk.Segment(space.static_body, a, b, 0.02)
+        seg = pymunk.Segment(space.static_body, a, b, r)
         seg.elasticity = 0.8
         seg.friction = 0.5
+        seg.collision_type = COLLISION_WALL
         space.add(seg)
 
 
@@ -163,34 +179,6 @@ def _try_kick_ball(robot: pymunk.Body, ball: pymunk.Body) -> bool:
     return True
 
 
-def _keep_ball_in_play(ball: pymunk.Body) -> None:
-    """Clamp and bounce the ball back when it tunnels out of walls."""
-    x, y = ball.position.x, ball.position.y
-    vx, vy = ball.velocity.x, ball.velocity.y
-    in_goal_mouth = GOAL_Y_MIN <= y <= GOAL_Y_MAX
-    restitution = 0.65
-
-    # Top and bottom boundaries are always solid.
-    if y < BALL_RADIUS:
-        y = BALL_RADIUS
-        vy = abs(vy) * restitution
-    elif y > FIELD_H - BALL_RADIUS:
-        y = FIELD_H - BALL_RADIUS
-        vy = -abs(vy) * restitution
-
-    # Side boundaries are solid except for the goal mouth opening.
-    if not in_goal_mouth:
-        if x < BALL_RADIUS:
-            x = BALL_RADIUS
-            vx = abs(vx) * restitution
-        elif x > FIELD_W - BALL_RADIUS:
-            x = FIELD_W - BALL_RADIUS
-            vx = -abs(vx) * restitution
-
-    ball.position = (x, y)
-    ball.velocity = (vx, vy)
-
-
 def main() -> None:
     space = pymunk.Space()
     space.gravity = (0, 0)
@@ -262,7 +250,6 @@ def main() -> None:
         _apply_damping_custom(ball, BALL_DAMP, BALL_DAMP, DT)
 
         space.step(DT)
-        _keep_ball_in_play(ball)
 
         scoring_team = _scoring_team(ball)
         if scoring_team is not None:
