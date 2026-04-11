@@ -9,6 +9,7 @@ Controls
 --------
   Mouse click — send target for robot 0
   1 2 3       — controller: 1=PD inversion  2=MPC  3=Time-optimal (bang-bang)
+    Enter       — kick with robot 0 if ball is in front kick zone
 """
 
 import json
@@ -406,7 +407,7 @@ def main() -> None:
 
     screen = pygame.display.set_mode((DISPLAY_W, DISPLAY_H + HUD_H))
     pygame.display.set_caption(
-        "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: MANUAL (WASD+QE / gamepad)"
+        "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: MANUAL (WASD+QE / gamepad)  |  Enter: Kick"
     )
     clock = pygame.time.Clock()
 
@@ -437,7 +438,10 @@ def main() -> None:
     target_pin: tuple[float, float] | None = None
     path_start: tuple[float, float] | None = None
 
-    print("[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  4=MANUAL  5=Toggle Strategy")
+    print(
+        "[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  "
+        "4=MANUAL  5=Toggle Strategy  Enter=Kick"
+    )
 
     running = True
     while running:
@@ -454,6 +458,9 @@ def main() -> None:
                     ))
                     state_str = "ON" if strategy_enabled else "OFF"
                     print(f"[VizNode] Strategy → {state_str}")
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    manual_pub.send_string(json.dumps({"kick": {"0": True}}))
+                    print("[VizNode] Kick requested for robot 0")
                 elif event.key in MODE_KEYS:
                     prev_mode_idx = mode_idx
                     mode_idx = MODE_KEYS[event.key]

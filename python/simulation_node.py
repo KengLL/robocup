@@ -33,6 +33,11 @@ GOAL_MOUTH_H = 200.0 / PX_PER_METER
 GOAL_Y_MIN = (FIELD_H - GOAL_MOUTH_H) / 2.0
 GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
 
+# Kick model: small rectangular contact zone in front of robot.
+KICK_ZONE_DEPTH = 0.12
+KICK_ZONE_HALF_WIDTH = 0.10
+KICK_IMPULSE = 0.22
+
 
 def _make_robot(
     space: pymunk.Space, x: float, y: float, angle: float = 0.0
@@ -139,6 +144,55 @@ def _reset_ball_to_center(ball: pymunk.Body) -> None:
     ball.position = (FIELD_W / 2.0, FIELD_H / 2.0)
 
 
+def _try_kick_ball(robot: pymunk.Body, ball: pymunk.Body) -> bool:
+    """Kick if ball is in a small front tangent zone of the robot."""
+    dx = ball.position.x - robot.position.x
+    dy = ball.position.y - robot.position.y
+    a = robot.angle
+
+    # World -> robot local frame where +x is robot forward.
+    local_x = math.cos(a) * dx + math.sin(a) * dy
+    local_y = -math.sin(a) * dx + math.cos(a) * dy
+
+    zone_min_x = ROBOT_RADIUS
+    zone_max_x = ROBOT_RADIUS + KICK_ZONE_DEPTH
+    in_zone = zone_min_x <= local_x <= zone_max_x and abs(local_y) <= KICK_ZONE_HALF_WIDTH
+    if not in_zone:
+        return False
+
+    impulse = (math.cos(a) * KICK_IMPULSE, math.sin(a) * KICK_IMPULSE)
+    ball.apply_impulse_at_world_point(impulse, ball.position)
+    return True
+
+
+def _keep_ball_in_play(ball: pymunk.Body) -> None:
+    """Clamp and bounce the ball back when it tunnels out of walls."""
+    x, y = ball.position.x, ball.position.y
+    vx, vy = ball.velocity.x, ball.velocity.y
+    in_goal_mouth = GOAL_Y_MIN <= y <= GOAL_Y_MAX
+    restitution = 0.65
+
+    # Top and bottom boundaries are always solid.
+    if y < BALL_RADIUS:
+        y = BALL_RADIUS
+        vy = abs(vy) * restitution
+    elif y > FIELD_H - BALL_RADIUS:
+        y = FIELD_H - BALL_RADIUS
+        vy = -abs(vy) * restitution
+
+    # Side boundaries are solid except for the goal mouth opening.
+    if not in_goal_mouth:
+        if x < BALL_RADIUS:
+            x = BALL_RADIUS
+            vx = abs(vx) * restitution
+        elif x > FIELD_W - BALL_RADIUS:
+            x = FIELD_W - BALL_RADIUS
+            vx = -abs(vx) * restitution
+
+    ball.position = (x, y)
+    ball.velocity = (vx, vy)
+
+
 def main() -> None:
     space = pymunk.Space()
     space.gravity = (0, 0)
@@ -168,6 +222,7 @@ def main() -> None:
     pull.setsockopt(zmq.RCVTIMEO, 0)  # non-blocking
 
     commands: dict[str, list] = {str(i): [0.0, 0.0, 0.0] for i in range(NUM_ROBOTS)}
+    pending_kicks: list[int] = []
     score = {"blue": 0, "red": 0}
     last_goal: dict | None = None
     goal_seq = 0
@@ -181,8 +236,15 @@ def main() -> None:
         while True:
             try:
                 cmd = json.loads(pull.recv_string())
+                ctype = cmd.get("type", "wheel")
+                if ctype == "kick":
+                    rid = int(cmd["robot_id"])
+                    if 0 <= rid < NUM_ROBOTS:
+                        pending_kicks.append(rid)
+                    continue
+
                 rid = str(cmd["robot_id"])
-                if rid in commands:
+                if rid in commands and "wheel_speeds" in cmd:
                     commands[rid] = cmd["wheel_speeds"]
             except zmq.Again:
                 break
@@ -191,9 +253,18 @@ def main() -> None:
         for i, body in enumerate(robots):
             _apply_wheel_commands(body, commands[str(i)])
             _apply_damping(body, DT)
+
+        if pending_kicks:
+            for rid in pending_kicks:
+                kicked = _try_kick_ball(robots[rid], ball)
+                if kicked:
+                    print(f"[SimNode] Kick by robot {rid}")
+            pending_kicks.clear()
+
         _apply_damping_custom(ball, BALL_DAMP, BALL_DAMP, DT)
 
         space.step(DT)
+        _keep_ball_in_play(ball)
 
         scoring_team = _scoring_team(ball)
         if scoring_team is not None:
