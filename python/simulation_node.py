@@ -28,10 +28,8 @@ COLLISION_ROBOT = 1
 COLLISION_BALL = 2
 COLLISION_WALL = 3
 
-# Goal mouth matches legacy Godot scene: 200 px at 140 px/m.
-GOAL_MOUTH_H = 200.0 / PX_PER_METER
-GOAL_Y_MIN = (FIELD_H - GOAL_MOUTH_H) / 2.0
-GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
+# Goal mouth geometry is defined in config.py (GOAL_MOUTH_H, GOAL_Y_MIN,
+# GOAL_Y_MAX) so viz and sim share one source of truth.
 
 # Kick model: small rectangular contact zone in front of robot.
 KICK_ZONE_DEPTH = 0.12

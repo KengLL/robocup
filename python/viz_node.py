@@ -31,8 +31,9 @@ from config import (
     FIELD_H,
     FIELD_W,
     FPS,
+    GOAL_Y_MAX,
+    GOAL_Y_MIN,
     MANUAL_PORT,
-    PX_PER_METER,
     ROBOT_RADIUS,
     VISION_PORT,
     WHEEL_ANGLES,
@@ -77,10 +78,7 @@ JS_AXIS_LX, JS_AXIS_LY, JS_AXIS_RX = 0, 1, 2
 
 HUD_H = 26
 
-# Goal mouth matches simulation/godot geometry: 200 px at 140 px/m.
-GOAL_MOUTH_H = 200.0 / PX_PER_METER
-GOAL_Y_MIN = (FIELD_H - GOAL_MOUTH_H) / 2.0
-GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
+# Goal geometry (GOAL_Y_MIN / GOAL_Y_MAX) is imported from config.py.
 
 PIXEL_GLYPHS = {
     "0": ["111", "101", "101", "101", "111"],
