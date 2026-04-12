@@ -12,6 +12,7 @@ Controls
     Enter       — kick with robot 0 if ball is in front kick zone
 """
 
+from __future__ import annotations
 import json
 import math
 import os
@@ -96,6 +97,8 @@ PIXEL_GLYPHS = {
     "P": ["111", "101", "111", "100", "100"],
     "D": ["110", "101", "101", "101", "110"],
     "T": ["111", "010", "010", "010", "010"],
+    "H": ["101", "101", "111", "101", "101"],
+    "W": ["101", "101", "101", "111", "010"],
     "I": ["111", "010", "010", "010", "111"],
     "M": ["101", "111", "111", "101", "101"],
     "U": ["101", "101", "101", "101", "111"],
@@ -231,11 +234,46 @@ def draw_hud(
     strategy_on: bool = False,
     score_blue: int = 0,
     score_red: int = 0,
+    game_info: dict | None = None,
 ) -> None:
     """Bottom status bar — mode selector blocks + centered score + strategy toggle."""
     y0 = DISPLAY_H
     pad = 5
     pygame.draw.rect(surf, C_HUD_BG, (0, y0, DISPLAY_W, HUD_H))
+
+    # timer and half display above HUD
+    if game_info is not None:
+        half = game_info.get("half", 1)
+        time_remaining = game_info.get("time_remaining", 300.0)
+        half_over = game_info.get("half_over", False)
+        total_seconds = int(time_remaining)
+
+        # draw small top bar
+        pygame.draw.rect(surf, (20, 20, 20), (0, 0, DISPLAY_W, 22))
+
+        # half label on left
+        if half_over:
+            half_label = "FULLTIME"
+        elif half == 1:
+            half_label = "HALF1"
+        elif half == 2:
+            half_label = "HALF2"
+        elif half == 3:
+            half_label = "OT1"
+        elif half == 4:
+            half_label = "OT2"
+        else:
+            half_label = "HALF1"
+        draw_pixel_text(surf, half_label, 6, 6, (180, 180, 180), pixel=2, spacing=1)
+
+        # timer in center — goes red under 30s
+        timer_str = str(total_seconds)
+        timer_color = (255, 60, 60) if time_remaining < 30 else (255, 255, 255)
+        pixel = 2
+        char_step = (3 * pixel) + 1 + pixel
+        total_w = len(timer_str) * char_step - pixel
+        tx = (DISPLAY_W - total_w) // 2
+        draw_pixel_text(surf, timer_str, tx, 6, timer_color, pixel=pixel, spacing=1)
 
     block_w = 40
     x = pad
@@ -386,6 +424,88 @@ def draw_goal_flash(
     sy = gy + goal_h + 36
     draw_pixel_text(surf, score_text, sx, sy, team_color, pixel=score_px, spacing=1)
 
+def draw_phase_popup(
+    surf: pygame.Surface,
+    text: str,
+    remaining: float,
+    max_duration: float = 3.0,
+) -> None:
+    """Big centered popup for phase changes like HALF TIME, OVERTIME etc."""
+    if remaining <= 0.0:
+        return
+
+    # fade out in last 0.5 seconds
+    alpha = int(min(200, 200 * (remaining / 0.5))) if remaining < 0.5 else 200
+    tint = pygame.Surface((DISPLAY_W, DISPLAY_H), pygame.SRCALPHA)
+    tint.fill((0, 0, 0, alpha // 2))
+    surf.blit(tint, (0, 0))
+
+    # big text
+    pixel = 10
+    char_step = (3 * pixel) + 1 + pixel
+    # split into two lines if needed
+    words = text.split()
+    lines = []
+    if len(words) == 1:
+        lines = [text]
+    else:
+        lines = [words[0], " ".join(words[1:])]
+
+    total_h = len(lines) * (5 * pixel + 10)
+    start_y = DISPLAY_H // 2 - total_h // 2
+
+    for i, line in enumerate(lines):
+        clean = line.replace(" ", "")
+        total_w = len(clean) * char_step - pixel
+        tx = (DISPLAY_W - total_w) // 2
+        ty = start_y + i * (5 * pixel + 10)
+        draw_pixel_text(surf, clean, tx, ty, (255, 255, 255), pixel=pixel, spacing=1)
+
+def draw_winner_screen(
+    surf: pygame.Surface,
+    winner: str,
+    score_blue: int,
+    score_red: int,
+) -> None:
+    """Full screen winner display shown at game end."""
+    # dark overlay
+    overlay = pygame.Surface((DISPLAY_W, DISPLAY_H), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 210))
+    surf.blit(overlay, (0, 0))
+
+    if winner == "blue":
+        win_color = (30, 144, 255)
+        win_text = "BLUE WINS"
+    elif winner == "red":
+        win_color = (255, 80, 80)
+        win_text = "RED WINS"
+    else:
+        win_color = (200, 200, 200)
+        win_text = "DRAW"
+
+    # winner text
+    pixel = 12
+    char_step = (3 * pixel) + 1 + pixel
+    clean = win_text.replace(" ", "")
+    total_w = len(clean) * char_step - pixel
+    tx = (DISPLAY_W - total_w) // 2
+    draw_pixel_text(surf, clean, tx, DISPLAY_H // 2 - 80, win_color, pixel=pixel, spacing=1)
+
+    # score
+    score_str = f"{score_blue}-{score_red}"
+    pixel = 16
+    char_step = (3 * pixel) + 1 + pixel
+    total_w = len(score_str) * char_step - pixel
+    sx = (DISPLAY_W - total_w) // 2
+    draw_pixel_text(surf, score_str, sx, DISPLAY_H // 2, (255, 255, 255), pixel=pixel, spacing=1)
+
+    # subtext
+    sub = "FULLTIME"
+    pixel = 4
+    char_step = (3 * pixel) + 1 + pixel
+    total_w = len(sub) * char_step - pixel
+    subx = (DISPLAY_W - total_w) // 2
+    draw_pixel_text(surf, sub, subx, DISPLAY_H // 2 + 90, (160, 160, 160), pixel=pixel, spacing=1)
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
@@ -422,6 +542,11 @@ def main() -> None:
     world_state: dict | None = None
     score_blue = 0
     score_red = 0
+    game_info = None
+    phase_popup_text = ""
+    phase_popup_until = 0.0
+    last_phase_seen = "FIRST HALF"
+    game_winner = None  # "blue", "red", "draw", or None
     last_goal_seq_seen = -1
     goal_flash_team = "blue"
     goal_flash_until = 0.0
@@ -524,7 +649,15 @@ def main() -> None:
             score = world_state.get("score", {})
             score_blue = int(score.get("blue", score_blue))
             score_red = int(score.get("red", score_red))
-
+            game_info = world_state.get("game", None)
+            if game_info is not None:
+                new_phase = game_info.get("phase", "FIRST HALF")
+                if new_phase != last_phase_seen:
+                    last_phase_seen = new_phase
+                    phase_popup_text = new_phase
+                    phase_popup_until = time.monotonic() + 3.0
+                    print(f"[VizNode] Phase → {new_phase}")
+                    game_winner = game_info.get("winner", None)
             last_goal = world_state.get("last_goal")
             if isinstance(last_goal, dict):
                 seq = int(last_goal.get("seq", -1))
@@ -581,6 +714,10 @@ def main() -> None:
                 pygame.draw.circle(screen, (230, 120, 0), (bx, by), 5)
 
         draw_confetti(screen, confetti_particles)
+        # phase change popup
+        phase_remaining = phase_popup_until - time.monotonic()
+        if phase_remaining > 0.0:
+            draw_phase_popup(screen, phase_popup_text, phase_remaining)
 
         remaining_flash = goal_flash_until - time.monotonic()
         if remaining_flash > 0.0:
@@ -591,8 +728,9 @@ def main() -> None:
                 remaining_flash,
             )
 
-        draw_hud(screen, mode_idx, strategy_enabled, score_blue, score_red)
-
+        draw_hud(screen, mode_idx, strategy_enabled, score_blue, score_red, game_info)
+        if game_winner is not None:
+            draw_winner_screen(screen, game_winner, score_blue, score_red)
         pygame.display.flip()
         clock.tick(FPS)
 

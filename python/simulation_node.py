@@ -21,6 +21,7 @@ CLI flags:
                identical to pre-flag runs.
 """
 
+from __future__ import annotations
 import argparse
 import json
 import math
@@ -70,6 +71,7 @@ def _make_robot(
 #: without needing CCD or a post-step teleport hack.
 WALL_HALF_THICKNESS = 0.10
 
+HALF_DURATION = 300.0  # seconds per half
 
 def _add_walls(space: pymunk.Space) -> None:
     """
@@ -164,21 +166,16 @@ def _scoring_team(ball: pymunk.Body) -> str | None:
         return "red"
     return None
 
-
 def _reset_ball_to_center(ball: pymunk.Body) -> None:
     ball.velocity = (0.0, 0.0)
     ball.angular_velocity = 0.0
     ball.position = (FIELD_W / 2.0, FIELD_H / 2.0)
-
-
-
 
 #: Per-axis standard deviation (meters) of the Gaussian jitter applied
 #: to initial robot positions when a seed is provided. Small enough that
 #: the nominal formation still makes sense; large enough that policies
 #: cannot memorize exact spawn locations.
 SPAWN_JITTER_STD = 0.10
-
 
 def _jittered(
     rng: random.Random | None, x: float, y: float
@@ -189,7 +186,6 @@ def _jittered(
         x + rng.gauss(0.0, SPAWN_JITTER_STD),
         y + rng.gauss(0.0, SPAWN_JITTER_STD),
     )
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RoboCup simulation node")
@@ -247,6 +243,12 @@ def main() -> None:
     commands: dict[str, list] = {str(i): [0.0, 0.0, 0.0] for i in range(NUM_ROBOTS)}
     pending_kicks: list[int] = []
     score = {"blue": 0, "red": 0}
+    game_time = 0.0        # seconds elapsed in current half
+    current_half = 1       # 1 or 2
+    half_over = False
+    game_over = False
+    winner = None
+    game_phase = "FIRST HALF"
     last_goal: dict | None = None
     goal_seq = 0
     sim_time = 0.0  # seconds of simulated physics, independent of wall clock
@@ -308,12 +310,67 @@ def main() -> None:
                 f"[SimNode] GOAL {scoring_team.upper()}  "
                 f"score {score['blue']}-{score['red']}"
             )
+            # 10 goal lead — end game immediately
+            if abs(score["blue"] - score["red"]) >= 10:
+                half_over = True
+                game_phase = "FULL TIME"
+                print(f"[SimNode] 10 GOAL LEAD — game over")
+        
+        if not half_over:
+            game_time += DT
+            if game_time >= HALF_DURATION:
+                if current_half == 1:
+                    current_half = 2
+                    game_time = 0.0
+                    game_phase = "SECOND HALF"
+                    print("[SimNode] HALF TIME — starting second half")
+                    _reset_ball_to_center(ball)
+                elif current_half == 2:
+                    if score["blue"] == score["red"]:
+                        current_half = 3
+                        game_time = 0.0
+                        game_phase = "OVERTIME"
+                        print("[SimNode] FULL TIME — scores equal, OVERTIME")
+                        _reset_ball_to_center(ball)
+                    else:
+                        half_over = True
+                        game_phase = "FULL TIME"
+                        print(f"[SimNode] FULL TIME — Blue: {score['blue']}  Red: {score['red']}")
+                elif current_half == 3:
+                    current_half = 4
+                    game_time = 0.0
+                    game_phase = "OVERTIME 2ND"
+                    print("[SimNode] OVERTIME second half")
+                    _reset_ball_to_center(ball)
+                elif current_half == 4:
+                    half_over = True
+                    game_phase = "FULL TIME"
+                    print(f"[SimNode] OVERTIME FULL TIME — Blue: {score['blue']}  Red: {score['red']}")
+
+        # set winner whenever game ends
+        if half_over and winner is None:
+            if score["blue"] > score["red"]:
+                winner = "blue"
+            elif score["red"] > score["blue"]:
+                winner = "red"
+            else:
+                winner = "draw"
+            print(f"[SimNode] WINNER: {winner}")
 
         # Publish world state
         state = {
             "t": sim_time,
             "score": {"blue": score["blue"], "red": score["red"]},
             "last_goal": last_goal,
+            "game": {
+                "half": current_half,
+                "time_remaining": max(0.0, HALF_DURATION - game_time),
+                "blue_score": score["blue"],
+                "red_score": score["red"],
+                "half_over": half_over,
+                "phase": game_phase,
+                "winner": winner,
+            },
             "ball": {
                 "x": ball.position.x,
                 "y": ball.position.y,
