@@ -28,6 +28,8 @@ NODES = [
     ("VizNode", "viz_node.py", HERE),
 ]
 
+POLICY_NODE = ("PolicyNode", "policy_node.py", HERE)
+
 processes: list[subprocess.Popen] = []
 
 
@@ -68,12 +70,21 @@ def main() -> None:
         default="blue",
         help="Team color for the strategy node",
     )
+    parser.add_argument(
+        "--policy",
+        default=None,
+        help=(
+            "Path to a PPO checkpoint. When set, launches policy_node.py in "
+            "place of strategy_node.py so the trained RL model drives the "
+            "team through the same strategy→robot_node interface."
+        ),
+    )
     args = parser.parse_args()
 
     skip = set()
     if args.no_viz:
         skip.add("VizNode")
-    if args.no_strategy:
+    if args.no_strategy or args.policy is not None:
         skip.add("StrategyNode")
 
     signal.signal(signal.SIGINT, _shutdown)
@@ -82,11 +93,22 @@ def main() -> None:
     print("[Launcher] Starting RoboCup pipeline ...\n")
 
     nodes = [(n, s, d) for n, s, d in NODES if n not in skip]
+    if args.policy is not None:
+        # Slot PolicyNode where StrategyNode would have been so the
+        # PUB bind happens before RobotNode subscribes.
+        insert_at = next(
+            (i for i, (n, _, _) in enumerate(nodes) if n == "RobotNode"),
+            len(nodes),
+        )
+        nodes.insert(insert_at, POLICY_NODE)
 
     for name, script, cwd in nodes:
-        extra = (
-            ["--mode", "zmq", "--color", args.color] if name == "StrategyNode" else None
-        )
+        if name == "StrategyNode":
+            extra = ["--mode", "zmq", "--color", args.color]
+        elif name == "PolicyNode":
+            extra = ["--checkpoint", args.policy]
+        else:
+            extra = None
         p = _launch(name, script, cwd, extra_args=extra)
         processes.append(p)
         time.sleep(0.4)  # stagger so PUB sockets bind before SUBs connect

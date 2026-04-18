@@ -174,9 +174,11 @@ MANUAL_MAX_OMEGA = 5.0
 
 
 class RobotController:
-    def __init__(self, robot_id: int, mode: str = "2005_INVERSION"):
+    def __init__(self, robot_id: int, mode: str = "2005_INVERSION",
+                 quiet: bool = False):
         self.id = robot_id
         self.mode = mode
+        self.quiet = quiet
         self.target: list | None = None
         self.target_angle: float | None = None
         self.path_length = 0.0
@@ -235,12 +237,13 @@ class RobotController:
         dist = float(np.linalg.norm(pos - tgt))
 
         if dist < ARRIVAL_THRESH:
-            avg = self.path_length / self.total_time if self.total_time > 0 else 0.0
-            print(
-                f"[Robot {self.id}] Arrived  mode={self.mode}  "
-                f"path={self.path_length:.2f}m  time={self.total_time:.2f}s  "
-                f"avg_speed={avg:.2f} m/s"
-            )
+            if not self.quiet:
+                avg = self.path_length / self.total_time if self.total_time > 0 else 0.0
+                print(
+                    f"[Robot {self.id}] Arrived  mode={self.mode}  "
+                    f"path={self.path_length:.2f}m  time={self.total_time:.2f}s  "
+                    f"avg_speed={avg:.2f} m/s"
+                )
             self.target = None
             self.target_angle = None
             return [0.0, 0.0, 0.0]
@@ -285,7 +288,7 @@ def main() -> None:
     while True:
         # Drain strategy targets first (non-blocking), only if enabled
         if strategy_enabled:
-            _drain_targets(strategy_sub, robots, zmq)
+            _drain_targets(strategy_sub, robots, zmq, cmd_push)
         else:
             # Still drain the socket so messages don't pile up
             while True:
@@ -360,13 +363,12 @@ def main() -> None:
 
 
 # drain all pending target messages from a SUB socket.
-def _drain_targets(sub_socket, robots, zmq_module):
+def _drain_targets(sub_socket, robots, zmq_module, cmd_push=None):
     while True:
         try:
             msg = sub_socket.recv_string()
-            print(f"[DEBUG] received target: {msg[:100]}")
-            targets = json.loads(msg).get("targets", {})
-            for rid_str, info in targets.items():
+            data = json.loads(msg)
+            for rid_str, info in data.get("targets", {}).items():
                 i = int(rid_str)
                 if 0 <= i < NUM_ROBOTS:
                     robots[i].set_target(
@@ -375,6 +377,16 @@ def _drain_targets(sub_socket, robots, zmq_module):
                         info.get("mode", "2005_INVERSION"),
                         theta=info.get("theta"),
                     )
+            # Strategy-sourced kicks (e.g. PolicyNode). Routed through
+            # cmd_push like the manual kick path so the simulator sees
+            # the same message shape.
+            if cmd_push is not None:
+                for rid in data.get("kicks", []):
+                    i = int(rid)
+                    if 0 <= i < NUM_ROBOTS:
+                        cmd_push.send_string(json.dumps(
+                            {"type": "kick", "robot_id": i}
+                        ))
         except zmq_module.Again:
             break
 
