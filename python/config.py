@@ -81,7 +81,11 @@ DISPLAY_W = int(FIELD_W * DISPLAY_SCALE)   # 900
 DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)   # 600
 
 # Arrival threshold (meters)
+<<<<<<< HEAD
 ARRIVAL_THRESH = 5.0 / 140.0  # robot.gd arrival threshold = 5 px
+=======
+ARRIVAL_THRESH = 5.0 / PX_PER_METER  # robot.gd arrival threshold = 5 px
+>>>>>>> 2cb7d26fe730916129d046412732cd3a801b23ea
 
 #Goal Dimensions
 GOAL_WIDTH = 1

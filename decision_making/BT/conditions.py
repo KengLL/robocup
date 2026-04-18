@@ -9,6 +9,9 @@ from state import RobotState
 
 GOAL_WIDTH = 1.0
 MIN_ROBOT_SEPARATION = 1.0
+=======
+MIN_ROBOT_SEPARATION = 2.0
+>>>>>>> 2cb7d26fe730916129d046412732cd3a801b23ea
 
 def best_shot_target(robot: RobotState, opponents: list, goal: np.ndarray) -> np.ndarray | None:
     if not opponents:

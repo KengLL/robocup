@@ -45,11 +45,14 @@ COLLISION_ROBOT = 1
 COLLISION_BALL = 2
 COLLISION_WALL = 3
 
+<<<<<<< HEAD
 # Goal mouth geometry is defined in config.py (GOAL_MOUTH_H, GOAL_Y_MIN,
 # GOAL_Y_MAX) so viz and sim share one source of truth.
 
 from decision_making.skills.kick import try_kick_ball
 
+=======
+>>>>>>> 2cb7d26fe730916129d046412732cd3a801b23ea
 #goal positions
 GOAL_WIDTH = 1.0
 GOAL_Y_MIN = FIELD_H / 2 - GOAL_WIDTH / 2
@@ -88,8 +91,11 @@ def _make_robot(
     space.add(body, shape)
     return body
 
+<<<<<<< HEAD
 HALF_DURATION = 300.0  # seconds per half
 
+=======
+>>>>>>> 2cb7d26fe730916129d046412732cd3a801b23ea
 def _add_walls(space: pymunk.Space) -> None:
     # bottom wall
     seg = pymunk.Segment(space.static_body, (0, 0), (FIELD_W, 0), 0.02)
@@ -264,6 +270,7 @@ def main() -> None:
         str(i): {"wheel_speeds": [0.0, 0.0, 0.0], "kick": False}
         for i in range(NUM_ROBOTS)
     }
+<<<<<<< HEAD
     pending_kicks: list[int] = []
     score = {"blue": 0, "red": 0}
     game_time = 0.0        # seconds elapsed in current half
@@ -289,6 +296,8 @@ def main() -> None:
         str(i): {"wheel_speeds": [0.0, 0.0, 0.0], "kick": False}
         for i in range(NUM_ROBOTS)
     }
+=======
+>>>>>>> 2cb7d26fe730916129d046412732cd3a801b23ea
 
     blue_score = 0
     red_score = 0
@@ -418,6 +427,25 @@ def main() -> None:
             else:
                 winner = "draw"
             print(f"[SimNode] WINNER: {winner}")
+
+        bx = ball.position.x
+        by = ball.position.y
+        if GOAL_Y_MIN <= by <= GOAL_Y_MAX:
+            if bx <= 0.0:
+                red_score += 1
+                print(f"[SimNode] GOAL for RED! Score — Blue: {blue_score}  Red: {red_score}")
+                _reset_positions(robots, ball)
+            elif bx >= FIELD_W:
+                blue_score += 1
+                print(f"[SimNode] GOAL for BLUE! Score — Blue: {blue_score}  Red: {red_score}")
+                _reset_positions(robots, ball)
+
+        # handle robots going off screen
+        for body in robots:
+            x, y = body.position
+            x = max(ROBOT_RADIUS, min(FIELD_W - ROBOT_RADIUS, x))
+            y = max(ROBOT_RADIUS, min(FIELD_H - ROBOT_RADIUS, y))
+            body.position = (x, y)
 
         bx = ball.position.x
         by = ball.position.y
