@@ -8,6 +8,7 @@ from geometry import can_pass_ball, point_to_line_distance
 from state import RobotState
 
 GOAL_WIDTH = 1.0
+<<<<<<< HEAD
 MIN_ROBOT_SEPARATION = 1.0
 =======
 MIN_ROBOT_SEPARATION = 2.0
