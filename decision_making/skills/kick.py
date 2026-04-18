@@ -1,8 +1,16 @@
 """Kick skill — physics-level kick zone check and impulse application."""
 
 import math
+import os
+import sys
 
 import pymunk
+
+# Resolve shared constants from python/config.py regardless of caller cwd.
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PYTHON_DIR = os.path.join(_ROOT, "python")
+if _PYTHON_DIR not in sys.path:
+    sys.path.insert(0, _PYTHON_DIR)
 
 from config import ROBOT_RADIUS
 
