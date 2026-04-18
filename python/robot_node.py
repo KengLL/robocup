@@ -20,8 +20,7 @@ import os
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)
-sys.path.insert(0, os.path.dirname(_HERE))
+sys.path.insert(0, _HERE)  # keep local python/config.py ahead of any similarly named module
 
 import numpy as np
 import zmq

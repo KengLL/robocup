@@ -84,7 +84,7 @@ Same format as `viz_node.py` manual targets.
 
 ## Constants
 
-From `config.py`:
+From `python/config.py`:
 
 | Constant | Value | Description |
 |----------|-------|-------------|
