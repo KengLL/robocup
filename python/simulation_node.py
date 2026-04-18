@@ -248,6 +248,11 @@ def main() -> None:
     half_over = False
     game_over = False
     winner = None
+    ball_stuck_timer = 0.0
+    ball_stuck_seq = 0
+    ball_last_pos = (FIELD_W / 2, FIELD_H / 2)
+    BALL_STUCK_THRESHOLD = 0.02   #less than this = considered stuck
+    BALL_STUCK_DURATION = 10.0     # seconds before ball goes back to middle
     game_phase = "FIRST HALF"
     last_goal: dict | None = None
     goal_seq = 0
@@ -347,6 +352,20 @@ def main() -> None:
                     game_phase = "FULL TIME"
                     print(f"[SimNode] OVERTIME FULL TIME — Blue: {score['blue']}  Red: {score['red']}")
 
+        # ball stuck detection
+        bx, by = ball.position.x, ball.position.y
+        ball_moved = math.hypot(bx - ball_last_pos[0], by - ball_last_pos[1])
+        if ball_moved < BALL_STUCK_THRESHOLD:
+            ball_stuck_timer += DT
+            if ball_stuck_timer >= BALL_STUCK_DURATION:
+                print("[SimNode] Ball stuck — resetting to center")
+                _reset_ball_to_center(ball)
+                ball_stuck_timer = 0.0
+                ball_last_pos = (FIELD_W / 2, FIELD_H / 2)
+                ball_stuck_seq += 1
+        else:
+            ball_stuck_timer = 0.0
+            ball_last_pos = (bx, by)
         # set winner whenever game ends
         if half_over and winner is None:
             if score["blue"] > score["red"]:
@@ -369,6 +388,7 @@ def main() -> None:
                 "red_score": score["red"],
                 "half_over": half_over,
                 "phase": game_phase,
+                "ball_stuck_seq": ball_stuck_seq,
                 "winner": winner,
             },
             "ball": {
