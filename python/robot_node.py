@@ -211,11 +211,6 @@ class RobotController:
 
         if dist < ARRIVAL_THRESH:
             avg = self.path_length / self.total_time if self.total_time > 0 else 0.0
-            print(
-                f"[Robot {self.id}] Arrived  mode={self.mode}  "
-                f"path={self.path_length:.2f}m  time={self.total_time:.2f}s  "
-                f"avg_speed={avg:.2f} m/s"
-            )
             self.target = None
             return [0.0, 0.0, 0.0]
 
