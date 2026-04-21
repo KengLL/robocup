@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -51,7 +52,7 @@ RED_GOAL = np.array([FIELD_LENGTH, FIELD_WIDTH / 2])  # [9.0, 3.0]
 
 
 # Builder
-def build_game_state(raw: dict, our_color: str = "blue") -> GameState:
+def build_game_state(raw: dict[str, Any], our_color: str = "blue") -> GameState:
     gamestate = GameState()
     gamestate.timestamp = raw.get("t", 0.0)
 
@@ -96,7 +97,7 @@ def build_game_state(raw: dict, our_color: str = "blue") -> GameState:
 
 
 # Helper
-def _parse_robot(rid: int, raw: dict) -> RobotState:
+def _parse_robot(rid: int, raw: dict[str, Any]) -> RobotState:
     return RobotState(
         id=rid,
         pos=np.array([raw.get("x", 0.0), raw.get("y", 0.0)]),

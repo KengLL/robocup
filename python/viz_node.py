@@ -13,6 +13,7 @@ Controls
 """
 
 from __future__ import annotations
+from typing import Any
 import json
 import math
 import os
@@ -24,7 +25,7 @@ import pygame
 import zmq
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import (
+from config import (  # noqa: E402
     ARRIVAL_THRESH,
     DISPLAY_H,
     DISPLAY_SCALE,
@@ -134,10 +135,10 @@ def s2w(px: int, py: int) -> tuple[float, float]:
 
 
 def draw_field(surf: pygame.Surface) -> None:
-    surf.fill(C_FIELD)
-    pygame.draw.rect(surf, C_LINE, (0, 0, DISPLAY_W, DISPLAY_H), 3)
-    pygame.draw.line(surf, C_LINE, (DISPLAY_W // 2, 0), (DISPLAY_W // 2, DISPLAY_H), 2)
-    pygame.draw.circle(
+    _ = surf.fill(C_FIELD)
+    _ = pygame.draw.rect(surf, C_LINE, (0, 0, DISPLAY_W, DISPLAY_H), 3)
+    _ = pygame.draw.line(surf, C_LINE, (DISPLAY_W // 2, 0), (DISPLAY_W // 2, DISPLAY_H), 2)
+    _ = pygame.draw.circle(
         surf, C_LINE, (DISPLAY_W // 2, DISPLAY_H // 2), int(0.5 * DISPLAY_SCALE), 2
     )
 
@@ -145,27 +146,27 @@ def draw_field(surf: pygame.Surface) -> None:
     _, gy0 = w2s(0.0, GOAL_Y_MAX)
     _, gy1 = w2s(0.0, GOAL_Y_MIN)
     # Extra white underlay on blue post for stronger contrast against grass.
-    pygame.draw.line(surf, (255, 255, 255), (0, gy0), (0, gy1), 8)
-    pygame.draw.line(surf, C_GOAL_LEFT, (0, gy0), (0, gy1), 5)
-    pygame.draw.line(surf, C_GOAL_RIGHT, (DISPLAY_W - 1, gy0), (DISPLAY_W - 1, gy1), 6)
+    _ = pygame.draw.line(surf, (255, 255, 255), (0, gy0), (0, gy1), 8)
+    _ = pygame.draw.line(surf, C_GOAL_LEFT, (0, gy0), (0, gy1), 5)
+    _ = pygame.draw.line(surf, C_GOAL_RIGHT, (DISPLAY_W - 1, gy0), (DISPLAY_W - 1, gy1), 6)
 
 
 def draw_robot(
-    surf: pygame.Surface, x: float, y: float, angle: float, color: tuple
+    surf: pygame.Surface, x: float, y: float, angle: float, color: tuple[int, int, int]
 ) -> None:
     cx, cy = w2s(x, y)
     r = max(4, int(ROBOT_RADIUS * DISPLAY_SCALE))
-    pygame.draw.circle(surf, color, (cx, cy), r)
-    pygame.draw.circle(surf, C_LINE, (cx, cy), r, 2)
+    _ = pygame.draw.circle(surf, color, (cx, cy), r)
+    _ = pygame.draw.circle(surf, C_LINE, (cx, cy), r, 2)
     # Heading arrow
     ex = int(cx + math.cos(angle) * r * 1.4)
     ey = int(cy - math.sin(angle) * r * 1.4)
-    pygame.draw.line(surf, C_LINE, (cx, cy), (ex, ey), 3)
+    _ = pygame.draw.line(surf, C_LINE, (cx, cy), (ex, ey), 3)
     # Wheel dots
     for alpha in WHEEL_ANGLES:
         wx = int(cx + math.cos(angle + alpha) * r)
         wy = int(cy - math.sin(angle + alpha) * r)
-        pygame.draw.circle(surf, C_WHEEL, (wx, wy), 4)
+        _ = pygame.draw.circle(surf, C_WHEEL, (wx, wy), 4)
 
 
 def draw_dotted_line(
@@ -174,7 +175,7 @@ def draw_dotted_line(
     y0: float,
     x1: float,
     y1: float,
-    color: tuple,
+    color: tuple[int, int, int],
     spacing: int = 12,
 ) -> None:
     sx0, sy0 = w2s(x0, y0)
@@ -188,19 +189,19 @@ def draw_dotted_line(
         t = i / steps
         px = int(sx0 + dx * t)
         py = int(sy0 + dy * t)
-        pygame.draw.circle(surf, color, (px, py), 2)
+        _ = pygame.draw.circle(surf, color, (px, py), 2)
 
 
-def draw_pin(surf: pygame.Surface, x: float, y: float, color: tuple) -> None:
+def draw_pin(surf: pygame.Surface, x: float, y: float, color: tuple[int, int, int]) -> None:
     """Map-pin icon: filled circle head + vertical stem."""
     cx, cy = w2s(x, y)
     stem_top = cy - 22
     head_r = 7
     # Stem
-    pygame.draw.line(surf, color, (cx, cy), (cx, stem_top + head_r), 2)
+    _ = pygame.draw.line(surf, color, (cx, cy), (cx, stem_top + head_r), 2)
     # Head
-    pygame.draw.circle(surf, color, (cx, stem_top), head_r)
-    pygame.draw.circle(surf, (255, 255, 255), (cx, stem_top), head_r, 1)
+    _ = pygame.draw.circle(surf, color, (cx, stem_top), head_r)
+    _ = pygame.draw.circle(surf, (255, 255, 255), (cx, stem_top), head_r, 1)
 
 
 def draw_pixel_text(
@@ -221,7 +222,7 @@ def draw_pixel_text(
         for row, bits in enumerate(glyph):
             for col, bit in enumerate(bits):
                 if bit == "1":
-                    pygame.draw.rect(
+                    _ = pygame.draw.rect(
                         surf,
                         color,
                         (cursor_x + col * pixel, y + row * pixel, pixel, pixel),
@@ -235,12 +236,12 @@ def draw_hud(
     strategy_on: bool = False,
     score_blue: int = 0,
     score_red: int = 0,
-    game_info: dict | None = None,
+    game_info: dict[str, Any] | None = None,
 ) -> None:
     """Bottom status bar — mode selector blocks + centered score + strategy toggle."""
     y0 = DISPLAY_H
     pad = 5
-    pygame.draw.rect(surf, C_HUD_BG, (0, y0, DISPLAY_W, HUD_H))
+    _ = pygame.draw.rect(surf, C_HUD_BG, (0, y0, DISPLAY_W, HUD_H))
 
     # timer and half display above HUD
     if game_info is not None:
@@ -250,7 +251,7 @@ def draw_hud(
         total_seconds = int(time_remaining)
 
         # draw small top bar
-        pygame.draw.rect(surf, (20, 20, 20), (0, 0, DISPLAY_W, 22))
+        _ = pygame.draw.rect(surf, (20, 20, 20), (0, 0, DISPLAY_W, 22))
 
         # half label on left
         if half_over:
@@ -285,11 +286,11 @@ def draw_hud(
         color = (
             MODE_COLORS[mode] if active else tuple(v // 4 for v in MODE_COLORS[mode])
         )
-        pygame.draw.rect(
+        _ = pygame.draw.rect(
             surf, color, (x, y0 + pad, block_w, HUD_H - pad * 2), border_radius=3
         )
         if active:
-            pygame.draw.rect(
+            _ = pygame.draw.rect(
                 surf,
                 (255, 255, 255),
                 (x, y0 + pad, block_w, HUD_H - pad * 2),
@@ -348,7 +349,7 @@ def draw_hud(
     draw_pixel_text(surf, strat_label, sx, sy, strat_color, pixel=pixel, spacing=1)
 
 
-def _spawn_confetti(particles: list, team: str) -> None:
+def _spawn_confetti(particles: list[dict[str, Any]], team: str) -> None:
     cx, cy = w2s(FIELD_W / 2.0, FIELD_H / 2.0)
     palette = (
         [(30, 144, 255), (130, 205, 255), (255, 255, 255)]
@@ -372,7 +373,7 @@ def _spawn_confetti(particles: list, team: str) -> None:
         )
 
 
-def _update_confetti(particles: list, dt: float) -> None:
+def _update_confetti(particles: list[dict[str, Any]], dt: float) -> None:
     gravity = 700.0
     alive = []
     for p in particles:
@@ -386,13 +387,13 @@ def _update_confetti(particles: list, dt: float) -> None:
     particles[:] = alive
 
 
-def draw_confetti(surf: pygame.Surface, particles: list) -> None:
+def draw_confetti(surf: pygame.Surface, particles: list[dict[str, Any]]) -> None:
     for p in particles:
         if p["x"] < 0 or p["x"] >= DISPLAY_W or p["y"] < 0 or p["y"] >= DISPLAY_H:
             continue
         scale = max(0.35, p["life"] / p["max_life"])
         radius = max(1, int(p["size"] * scale))
-        pygame.draw.circle(surf, p["color"], (int(p["x"]), int(p["y"])), radius)
+        _ = pygame.draw.circle(surf, p["color"], (int(p["x"]), int(p["y"])), radius)
 
 
 def draw_goal_flash(
@@ -406,8 +407,8 @@ def draw_goal_flash(
     team_color = (100, 190, 255) if team == "blue" else (255, 110, 110)
     alpha = int(max(0, min(170, 170 * (remaining / 2.0))))
     tint = pygame.Surface((DISPLAY_W, DISPLAY_H), pygame.SRCALPHA)
-    tint.fill((team_color[0], team_color[1], team_color[2], alpha))
-    surf.blit(tint, (0, 0))
+    _ = tint.fill((team_color[0], team_color[1], team_color[2], alpha))
+    _ = surf.blit(tint, (0, 0))
 
     goal_text = "GOAL"
     goal_px = 14
@@ -438,8 +439,8 @@ def draw_phase_popup(
     # fade out in last 0.5 seconds
     alpha = int(min(200, 200 * (remaining / 0.5))) if remaining < 0.5 else 200
     tint = pygame.Surface((DISPLAY_W, DISPLAY_H), pygame.SRCALPHA)
-    tint.fill((0, 0, 0, alpha // 2))
-    surf.blit(tint, (0, 0))
+    _ = tint.fill((0, 0, 0, alpha // 2))
+    _ = surf.blit(tint, (0, 0))
 
     # big text
     pixel = 10
@@ -471,8 +472,8 @@ def draw_winner_screen(
     """Full screen winner display shown at game end."""
     # dark overlay
     overlay = pygame.Surface((DISPLAY_W, DISPLAY_H), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 210))
-    surf.blit(overlay, (0, 0))
+    _ = overlay.fill((0, 0, 0, 210))
+    _ = surf.blit(overlay, (0, 0))
 
     if winner == "blue":
         win_color = (30, 144, 255)
@@ -516,7 +517,7 @@ def _apply_deadzone(v: float, dz: float) -> float:
 
 
 def main() -> None:
-    pygame.init()
+    _ = pygame.init()
     pygame.joystick.init()
     joystick = None
     if pygame.joystick.get_count() > 0:
@@ -533,14 +534,14 @@ def main() -> None:
     ctx = zmq.Context()
 
     vision_sub = ctx.socket(zmq.SUB)
-    vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
+    _ = vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
     vision_sub.setsockopt_string(zmq.SUBSCRIBE, "")
     vision_sub.setsockopt(zmq.RCVTIMEO, 0)
 
     manual_pub = ctx.socket(zmq.PUB)
-    manual_pub.bind(f"tcp://*:{MANUAL_PORT}")
+    _ = manual_pub.bind(f"tcp://*:{MANUAL_PORT}")
 
-    world_state: dict | None = None
+    world_state: dict[str, Any] | None = None
     score_blue = 0
     score_red = 0
     game_info = None
@@ -554,7 +555,7 @@ def main() -> None:
     goal_flash_team = "blue"
     goal_flash_until = 0.0
     goal_flash_score_text = "0-0"
-    confetti_particles: list = []
+    confetti_particles: list[dict[str, Any]] = []
 
     mode_idx = 0
     prev_mode_idx = 0
@@ -566,7 +567,7 @@ def main() -> None:
 
     print(
         "[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  "
-        "4=MANUAL  5=Toggle Strategy  Enter=Kick"
+        + "4=MANUAL  5=Toggle Strategy  Enter=Kick"
     )
 
     running = True
@@ -579,13 +580,13 @@ def main() -> None:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_5:
                     strategy_enabled = not strategy_enabled
-                    manual_pub.send_string(json.dumps(
+                    _ = manual_pub.send_string(json.dumps(
                         {"strategy_enabled": strategy_enabled}
                     ))
                     state_str = "ON" if strategy_enabled else "OFF"
                     print(f"[VizNode] Strategy → {state_str}")
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    manual_pub.send_string(json.dumps({"kick": {"0": True}}))
+                    _ = manual_pub.send_string(json.dumps({"kick": {"0": True}}))
                     print("[VizNode] Kick requested for robot 0")
                 elif event.key in MODE_KEYS:
                     prev_mode_idx = mode_idx
@@ -593,7 +594,7 @@ def main() -> None:
                     print(f"[VizNode] Mode → {MODES[mode_idx]}")
                     # Leaving MANUAL: send zero velocity so robot stops immediately
                     if MODES[prev_mode_idx] == "MANUAL" and mode_idx != prev_mode_idx:
-                        manual_pub.send_string(json.dumps(
+                        _ = manual_pub.send_string(json.dumps(
                             {"direct": {"0": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
                         ))
 
@@ -610,7 +611,7 @@ def main() -> None:
                         else:
                             path_start = None
                         target_pin = (wx, wy)
-                        manual_pub.send_string(
+                        _ = manual_pub.send_string(
                             json.dumps({"targets": {"0": {"x": wx, "y": wy, "mode": mode}}})
                         )
                         print(f"[VizNode] Target → ({wx:.2f}, {wy:.2f})  [{mode}]")
@@ -637,7 +638,7 @@ def main() -> None:
                     vy = -ly                      # SDL Y axis is inverted (up = -1)
                     w = -rx * MANUAL_MAX_OMEGA    # right stick right = clockwise = -ω
 
-            manual_pub.send_string(json.dumps(
+            _ = manual_pub.send_string(json.dumps(
                 {"direct": {"0": {"vx": vx, "vy": vy, "w": w}}}
             ))
 
@@ -718,7 +719,7 @@ def main() -> None:
             b = world_state.get("ball")
             if b:
                 bx, by = w2s(b["x"], b["y"])
-                pygame.draw.circle(screen, (230, 120, 0), (bx, by), 5)
+                _ = pygame.draw.circle(screen, (230, 120, 0), (bx, by), 5)
 
         draw_confetti(screen, confetti_particles)
         # phase change popup
@@ -743,7 +744,7 @@ def main() -> None:
         if game_winner is not None:
             draw_winner_screen(screen, game_winner, score_blue, score_red)
         pygame.display.flip()
-        clock.tick(FPS)
+        _ = clock.tick(FPS)
 
     pygame.quit()
 

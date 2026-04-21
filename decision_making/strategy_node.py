@@ -5,22 +5,24 @@ import argparse
 import json
 import os
 import sys
+from typing import Any, final
 
 import numpy as np
 
-# Add decision_making/ so sibling modules resolve when run from any cwd
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add project root so `decision_making.*` resolves when run as a standalone script
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 VISION_PORT = 9090
 STRATEGY_PORT = 9091
 
-from geometry import distance, lerp, opp_goal, our_goal
-from prediction import predict_intercept_point
-from state import GameState, build_game_state
+from decision_making.geometry import distance, lerp, opp_goal, our_goal  # noqa: E402
+from decision_making.prediction import predict_intercept_point  # noqa: E402
+from decision_making.state import GameState, build_game_state  # noqa: E402
 
-OUR_COLOR = "blue"
+our_color = "blue"
 
 
+@final
 class ZMQBackend:
     def __init__(self):
         import zmq
@@ -29,18 +31,18 @@ class ZMQBackend:
         self.context = zmq.Context()
 
         self.vision_sub = self.context.socket(zmq.SUB)
-        self.vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
+        _ = self.vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
         self.vision_sub.setsockopt_string(zmq.SUBSCRIBE, "")
         self.vision_sub.setsockopt(zmq.RCVTIMEO, 100)
 
         self.strategy_pub = self.context.socket(zmq.PUB)
-        self.strategy_pub.bind(f"tcp://*:{STRATEGY_PORT}")
+        _ = self.strategy_pub.bind(f"tcp://*:{STRATEGY_PORT}")
 
         print(
             f"[Strategy node] ZMQ mode: connected to vision on port {VISION_PORT} and strategy on port {STRATEGY_PORT}"
         )
 
-    def receive_state(self) -> dict | None:
+    def receive_state(self) -> dict[str, Any] | None:
         # Block up to RCVTIMEO (100 ms) for the first message
         try:
             raw = json.loads(self.vision_sub.recv_string())
@@ -55,10 +57,11 @@ class ZMQBackend:
                 break
         return raw
 
-    def send_targets(self, msg: dict) -> None:
-        self.strategy_pub.send_string(json.dumps(msg))
+    def send_targets(self, msg: dict[str, Any]) -> None:
+        _ = self.strategy_pub.send_string(json.dumps(msg))
 
 
+@final
 class TCPBackend:
     def __init__(self):
         import socket
@@ -81,7 +84,7 @@ class TCPBackend:
         self.sock.setblocking(False)
         self.buffer = ""
 
-    def receive_state(self) -> dict | None:
+    def receive_state(self) -> dict[str, Any] | None:
         import socket
 
         try:
@@ -103,7 +106,7 @@ class TCPBackend:
                     pass
         return raw
 
-    def send_targets(self, msg: dict) -> None:
+    def send_targets(self, msg: dict[str, Any]) -> None:
         try:
             self.sock.sendall((json.dumps(msg) + "\n").encode())
         except BrokenPipeError:
@@ -124,12 +127,12 @@ def decide(gamestate: GameState) -> dict[int, np.ndarray]:
         if i == 0:
             targets[robot.id] = predict_intercept_point(ball, robot, 0.9, 2.0, 20)
         elif i == 1:
-            goal = opp_goal(OUR_COLOR)
+            goal = opp_goal(our_color)
             to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)
             perp = np.array([-to_goal[1], to_goal[0]])
             targets[robot.id] = ball.pos + to_goal * 1.5 + perp * 1.0
         else:
-            goal = our_goal(OUR_COLOR)
+            goal = our_goal(our_color)
             targets[robot.id] = lerp(goal, ball.pos, 0.3)
     return targets
 
@@ -137,10 +140,10 @@ def decide(gamestate: GameState) -> dict[int, np.ndarray]:
 def main() -> None:
     print("A")
     parser = argparse.ArgumentParser(description="Strategy node for the RoboCup game")
-    parser.add_argument(
+    _ = parser.add_argument(
         "--mode", choices=["tcp", "zmq"], default="zmq", help="Mode: tcp or zmq"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--color",
         choices=["blue", "red"],
         default="blue",
@@ -148,13 +151,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    global OUR_COLOR
-    OUR_COLOR = args.color
+    global our_color
+    our_color = args.color
 
     backend = ZMQBackend() if args.mode == "zmq" else TCPBackend()
 
     print(f"[Strategy node] {args.mode} mode: started")
-    print(f"[Strategy node] {args.mode} mode: Controlling {OUR_COLOR} team")
+    print(f"[Strategy node] {args.mode} mode: Controlling {our_color} team")
 
     frame = 0
     while True:
@@ -163,7 +166,7 @@ def main() -> None:
             continue
 
         try:
-            gamestate = build_game_state(raw, OUR_COLOR)
+            gamestate = build_game_state(raw, our_color)
             targets = decide(gamestate)
             msg = {
                 "targets": {

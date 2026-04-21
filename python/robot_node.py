@@ -19,13 +19,30 @@ import math
 import os
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)  # keep local python/config.py ahead of any similarly named module
-
 import numpy as np
 import zmq
 
-from config import *
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)  # keep local python/config.py ahead of any similarly named module
+
+from config import (  # noqa: E402
+    ARRIVAL_THRESH,
+    COMMAND_PORT,
+    DT,
+    KD,
+    KP,
+    LINEAR_DAMP,
+    MANUAL_PORT,
+    MOTOR_MAX_FORCE,
+    MPC_DT,
+    MPC_HORIZON,
+    NUM_ROBOTS,
+    ROBOT_MASS,
+    STRATEGY_PORT,
+    VISION_PORT,
+    WHEEL_ANGLES,
+    WHEEL_DISTANCE,
+)
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +52,7 @@ def _rot2d(v: np.ndarray, angle: float) -> np.ndarray:
     return np.array([c * v[0] - s * v[1], s * v[0] + c * v[1]])
 
 
-def _inverse_kinematics(vx: float, vy: float, w: float) -> list:
+def _inverse_kinematics(vx: float, vy: float, w: float) -> list[float]:
     """
     Local body-frame velocity (vx, vy, ω) → normalised wheel speeds.
     Matches robot.gd inverse kinematics block.
@@ -58,7 +75,7 @@ def _ctrl_dynamic_inversion(
     target: np.ndarray,
     velocity: np.ndarray,
     angle: float,
-) -> tuple:
+) -> tuple[float, float, float]:
     """
     robot.gd calculate_dynamic_inversion()
     Imposed error dynamics: ë + C·ė + K·e = 0
@@ -75,7 +92,7 @@ def _ctrl_mpc_rollout(
     target: np.ndarray,
     velocity: np.ndarray,
     angle: float,
-) -> tuple:
+) -> tuple[float, float, float]:
     """
     robot.gd calculate_mpc_rollout()
     Greedy MPC: evaluate 8 candidate inputs over MPC_HORIZON steps.
@@ -117,7 +134,7 @@ def _ctrl_time_optimal(
     target: np.ndarray,
     velocity: np.ndarray,
     angle: float,
-) -> tuple:
+) -> tuple[float, float, float]:
     """
     robot.gd calculate_time_optimal_2005()
     Bang-bang trajectory: accelerate full until braking distance reached.
@@ -157,14 +174,14 @@ MANUAL_MAX_OMEGA = 5.0
 
 class RobotController:
     def __init__(self, robot_id: int, mode: str = "2005_INVERSION"):
-        self.id = robot_id
-        self.mode = mode
-        self.target: list | None = None
-        self.path_length = 0.0
-        self.total_time = 0.0
+        self.id: int = robot_id
+        self.mode: str = mode
+        self.target: list[float] | None = None
+        self.path_length: float = 0.0
+        self.total_time: float = 0.0
         self._last_pos: np.ndarray | None = None
         # MANUAL mode: world-frame (vx, vy, omega) received directly from operator
-        self.direct_vel: tuple | None = None
+        self.direct_vel: tuple[float, float, float] | None = None
 
     def set_target(self, x: float, y: float, mode: str | None = None) -> None:
         self.target = [x, y]
@@ -181,7 +198,7 @@ class RobotController:
         self.mode = "MANUAL"
         self.target = None
 
-    def compute_wheels(self, rstate: dict) -> list:
+    def compute_wheels(self, rstate: dict[str, float]) -> list[float]:
         """Given robot state dict, return normalised wheel speeds [w0,w1,w2]."""
         pos = np.array([rstate["x"], rstate["y"]])
         vel = np.array([rstate["vx"], rstate["vy"]])
@@ -211,8 +228,8 @@ class RobotController:
             avg = self.path_length / self.total_time if self.total_time > 0 else 0.0
             print(
                 f"[Robot {self.id}] Arrived  mode={self.mode}  "
-                f"path={self.path_length:.2f}m  time={self.total_time:.2f}s  "
-                f"avg_speed={avg:.2f} m/s"
+                + f"path={self.path_length:.2f}m  time={self.total_time:.2f}s  "
+                + f"avg_speed={avg:.2f} m/s"
             )
             self.target = None
             return [0.0, 0.0, 0.0]
@@ -231,22 +248,22 @@ def main() -> None:
     ctx = zmq.Context()
 
     vision_sub = ctx.socket(zmq.SUB)
-    vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
+    _ = vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
     vision_sub.setsockopt_string(zmq.SUBSCRIBE, "")
     vision_sub.setsockopt(zmq.RCVTIMEO, 100)  # wait up to 100 ms
 
     manual_sub = ctx.socket(zmq.SUB)
-    manual_sub.connect(f"tcp://localhost:{MANUAL_PORT}")
+    _ = manual_sub.connect(f"tcp://localhost:{MANUAL_PORT}")
     manual_sub.setsockopt_string(zmq.SUBSCRIBE, "")
     manual_sub.setsockopt(zmq.RCVTIMEO, 0)  # non-blocking
 
     strategy_sub = ctx.socket(zmq.SUB)
-    strategy_sub.connect(f"tcp://localhost:{STRATEGY_PORT}")
+    _ = strategy_sub.connect(f"tcp://localhost:{STRATEGY_PORT}")
     strategy_sub.setsockopt_string(zmq.SUBSCRIBE, "")
     strategy_sub.setsockopt(zmq.RCVTIMEO, 0)
 
     cmd_push = ctx.socket(zmq.PUSH)
-    cmd_push.connect(f"tcp://localhost:{COMMAND_PORT}")
+    _ = cmd_push.connect(f"tcp://localhost:{COMMAND_PORT}")
 
     strategy_enabled = False
 
@@ -262,7 +279,7 @@ def main() -> None:
             # Still drain the socket so messages don't pile up
             while True:
                 try:
-                    strategy_sub.recv_string()
+                    _ = strategy_sub.recv_string()
                 except zmq.Again:
                     break
 
@@ -296,7 +313,7 @@ def main() -> None:
                 for rid_str in data.get("kick", {}):
                     i = int(rid_str)
                     if 0 <= i < NUM_ROBOTS:
-                        cmd_push.send_string(
+                        _ = cmd_push.send_string(
                             json.dumps({"type": "kick", "robot_id": i})
                         )
 
@@ -314,7 +331,7 @@ def main() -> None:
             if rid_str not in state.get("robots", {}):
                 continue
             wheel_speeds = robot.compute_wheels(state["robots"][rid_str])
-            cmd_push.send_string(
+            _ = cmd_push.send_string(
                 json.dumps(
                     {
                         "robot_id": robot.id,

@@ -1,11 +1,11 @@
 import numpy as np
-from state import BLUE_GOAL, RED_GOAL, RobotState
+from decision_making.state import BLUE_GOAL, RED_GOAL, RobotState
 
 
 # check if there is a clear shot from the robot to the goal
 # for attackers
 def has_clear_shot(
-    robot: RobotState, goal_pos: np.ndarray, opponents: list, block_radius: float
+    robot: RobotState, goal_pos: np.ndarray, opponents: list[RobotState], block_radius: float
 ) -> bool:
     return not is_blocking(robot.pos, goal_pos, opponents, block_radius)
 
@@ -14,7 +14,7 @@ def has_clear_shot(
 def can_pass_ball(
     passer_robot: RobotState,
     receiver_robot: RobotState,
-    opponents: list,
+    opponents: list[RobotState],
     block_radius: float,
 ) -> bool:
     return not is_blocking(
@@ -24,7 +24,7 @@ def can_pass_ball(
 
 # check if any robot is wihin `radius` of the line segment between `start` and `end`
 def is_blocking(
-    start: np.ndarray, end: np.ndarray, robots: list, radius: float
+    start: np.ndarray, end: np.ndarray, robots: list[RobotState], radius: float
 ) -> bool:
     for robot in robots:
         if point_to_line_distance(robot.pos, start, end) < radius:

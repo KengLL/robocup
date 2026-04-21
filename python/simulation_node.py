@@ -22,6 +22,7 @@ CLI flags:
 """
 
 from __future__ import annotations
+from typing import Any
 import argparse
 import json
 import math
@@ -37,7 +38,26 @@ import zmq
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # project root (for decision_making.*)
 sys.path.insert(0, _HERE)                   # python/ takes priority for config
-from config import *
+from config import (  # noqa: E402
+    ANGULAR_DAMP,
+    BALL_DAMP,
+    BALL_MASS,
+    BALL_RADIUS,
+    COMMAND_PORT,
+    DT,
+    FIELD_H,
+    FIELD_W,
+    GOAL_Y_MAX,
+    GOAL_Y_MIN,
+    LINEAR_DAMP,
+    MOTOR_MAX_FORCE,
+    NUM_ROBOTS,
+    ROBOT_MASS,
+    ROBOT_RADIUS,
+    VISION_PORT,
+    WHEEL_ANGLES,
+    WHEEL_DISTANCE,
+)
 
 # collision types
 # used for later collision logic
@@ -48,7 +68,7 @@ COLLISION_WALL = 3
 # Goal mouth geometry is defined in config.py (GOAL_MOUTH_H, GOAL_Y_MIN,
 # GOAL_Y_MAX) so viz and sim share one source of truth.
 
-from decision_making.skills.kick import try_kick_ball
+from decision_making.skills.kick import try_kick_ball  # noqa: E402
 
 
 def _make_robot(
@@ -133,7 +153,7 @@ def _apply_damping_custom(
     body.angular_velocity *= ang_factor
 
 
-def _apply_wheel_commands(body: pymunk.Body, wheel_speeds: list) -> None:
+def _apply_wheel_commands(body: pymunk.Body, wheel_speeds: list[float]) -> None:
     """
     Forward kinematics: wheel speeds → forces on the pymunk body.
     Matches robot.gd _physics_process forward kinematics block.
@@ -189,17 +209,17 @@ def _jittered(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RoboCup simulation node")
-    parser.add_argument(
+    _ = parser.add_argument(
         "--headless",
         action="store_true",
         help="Run the physics loop as fast as the CPU allows (no tick sleep).",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--seed",
         type=int,
         default=None,
         help="Seed for random / numpy.random. Also enables Gaussian jitter "
-             "of initial robot positions for domain randomization.",
+             + "of initial robot positions for domain randomization.",
     )
     args = parser.parse_args()
 
@@ -234,19 +254,18 @@ def main() -> None:
 
     ctx = zmq.Context()
     pub = ctx.socket(zmq.PUB)
-    pub.bind(f"tcp://*:{VISION_PORT}")
+    _ = pub.bind(f"tcp://*:{VISION_PORT}")
 
     pull = ctx.socket(zmq.PULL)
-    pull.bind(f"tcp://*:{COMMAND_PORT}")
+    _ = pull.bind(f"tcp://*:{COMMAND_PORT}")
     pull.setsockopt(zmq.RCVTIMEO, 0)  # non-blocking
 
-    commands: dict[str, list] = {str(i): [0.0, 0.0, 0.0] for i in range(NUM_ROBOTS)}
+    commands: dict[str, list[float]] = {str(i): [0.0, 0.0, 0.0] for i in range(NUM_ROBOTS)}
     pending_kicks: list[int] = []
     score = {"blue": 0, "red": 0}
     game_time = 0.0        # seconds elapsed in current half
     current_half = 1       # 1 or 2
     half_over = False
-    game_over = False
     winner = None
     ball_stuck_timer = 0.0
     ball_stuck_seq = 0
@@ -254,13 +273,13 @@ def main() -> None:
     BALL_STUCK_THRESHOLD = 0.02   #less than this = considered stuck
     BALL_STUCK_DURATION = 10.0     # seconds before ball goes back to middle
     game_phase = "FIRST HALF"
-    last_goal: dict | None = None
+    last_goal: dict[str, Any] | None = None
     goal_seq = 0
     sim_time = 0.0  # seconds of simulated physics, independent of wall clock
 
     print(
         f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}"
-        f"   headless={args.headless}"
+        + f"   headless={args.headless}"
     )
 
     while True:
@@ -313,13 +332,13 @@ def main() -> None:
             }
             print(
                 f"[SimNode] GOAL {scoring_team.upper()}  "
-                f"score {score['blue']}-{score['red']}"
+                + f"score {score['blue']}-{score['red']}"
             )
             # 10 goal lead — end game immediately
             if abs(score["blue"] - score["red"]) >= 10:
                 half_over = True
                 game_phase = "FULL TIME"
-                print(f"[SimNode] 10 GOAL LEAD — game over")
+                print("[SimNode] 10 GOAL LEAD — game over")
         
         if not half_over:
             game_time += DT
@@ -409,7 +428,7 @@ def main() -> None:
                 for i, body in enumerate(robots)
             },
         }
-        pub.send_string(json.dumps(state))
+        _ = pub.send_string(json.dumps(state))
 
         if not args.headless:
             sleep_t = DT - (time.perf_counter() - t0)

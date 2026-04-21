@@ -56,13 +56,13 @@ def _shutdown(sig=None, frame=None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RoboCup Python Pipeline Launcher")
-    parser.add_argument(
+    _ = parser.add_argument(
         "--no-viz", action="store_true", help="Skip the Pygame visualization node"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--no-strategy", action="store_true", help="Skip the autonomous strategy node"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--color",
         choices=["blue", "red"],
         default="blue",
