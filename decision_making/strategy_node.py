@@ -174,20 +174,32 @@ def decide(
 
         for i, robot in enumerate(sorted_team):
             if i == 0:  # attacker
-                if rl_enabled and rl_skill is not None:
-                    # Let the policy run anywhere on the field. It arcs around
-                    # the ball which naturally breaks the midfield stalemate.
+                # Policy was trained with robot west of ball (blue-attacks-right).
+                # Mirror works cleanly only when the attacker is on its own side
+                # of the ball along the attack axis; otherwise the policy drifts
+                # OOD and picks the long way round. Fall back to classic there.
+                if attacks_right:
+                    rl_in_dist = robot.pos[0] < ball.pos[0] - 0.1
+                else:
+                    rl_in_dist = robot.pos[0] > ball.pos[0] + 0.1
+
+                if rl_enabled and rl_skill is not None and rl_in_dist:
+                    # RL: lock to team_dir. Policy was trained with the robot
+                    # at that angle and its action frame assumes it.
                     tx, ty = rl_skill.target(robot, ball, attacks_right=attacks_right)
                     targets[robot.id] = (tx, ty, team_dir)
-                    kicks.append(robot.id)
                 else:
-                    # Classic fallback: approach from behind, no kick emit
-                    # (two classic attackers would just cancel each other out).
+                    # Classic: face the motion direction while navigating so the
+                    # robot doesn't "shift" sideways with its back to the target.
+                    # Once near the approach point, rotate to team_dir to line
+                    # up the kick.
                     pt = _approach_behind_ball(ball.pos, opp_goal(team_color), team_color)
-                    targets[robot.id] = (
-                        float(pt[0]), float(pt[1]),
-                        _face_point(robot.pos, ball.pos, team_dir),
-                    )
+                    dx, dy = float(pt[0] - robot.pos[0]), float(pt[1] - robot.pos[1])
+                    dist = math.hypot(dx, dy)
+                    ta = team_dir if dist < ATTACKER_ALIGN_DIST else math.atan2(dy, dx)
+                    targets[robot.id] = (float(pt[0]), float(pt[1]), ta)
+                # Possession filter below drops duplicates in the same tick.
+                kicks.append(robot.id)
             elif i == 1:  # supporter — sits past the ball toward opp goal
                 goal = opp_goal(team_color)
                 to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)
@@ -236,6 +248,9 @@ def _face_point(
 APPROACH_OFFSET = 0.3
 # Per-team lateral offset breaks the symmetry when both attackers contest the ball.
 APPROACH_LATERAL = 0.2
+# Within this distance of the approach point, the attacker rotates to the kick
+# direction. Farther away, it faces the motion direction for natural driving.
+ATTACKER_ALIGN_DIST = 0.6
 
 
 def _approach_behind_ball(
