@@ -7,3 +7,8 @@ addons/godot-git-plugin/
 __pycache__/
 
 .venv/
+
+# RL training
+decision_making/rl/checkpoints/
+decision_making/rl/tb_logs/
+decision_making/rl/runs/

@@ -1,10 +1,7 @@
-"""
-PymunkWorld — in-process physics world for the RoboCup sim.
+"""Headless pymunk world shared by simulation_node.py and the RL env.
 
-Factored out of simulation_node.py so both the ZMQ deployment node and the
-Gymnasium training env can drive the same physics. The ZMQ loop, game-clock
-logic, and ball-stuck detection stay in simulation_node.py — this class is
-physics only.
+ZMQ transport, game clock, and ball-stuck detection live in simulation_node.py;
+this file is just physics.
 """
 
 from __future__ import annotations
@@ -47,17 +44,13 @@ COLLISION_ROBOT = 1
 COLLISION_BALL = 2
 COLLISION_WALL = 3
 
-#: Half-thickness of the field boundary walls (meters). Must exceed
-#: |v_max| * DT so pymunk's discrete collision detection catches fast
-#: balls without CCD.
+# Wall half-thickness, meters. Must exceed |v_max| * DT so pymunk's discrete
+# collision detection catches fast balls without CCD.
 WALL_HALF_THICKNESS = 0.10
 
-#: Per-axis stddev of initial-pose jitter when a seed is provided. Small
-#: enough that the formation still makes sense; large enough that policies
-#: can't memorise spawn points.
-SPAWN_JITTER_STD = 0.10
+SPAWN_JITTER_STD = 0.10 # meters per axis, only applied when a seed is given
 
-#: Default spawn layout (blue 0-2 left, red 3-5 right).
+# Default spawn layout (blue 0-2 left, red 3-5 right).
 NOMINAL_SPAWNS: list[tuple[float, float, float]] = [
     (2.0, 3.0, 0.0),
     (1.5, 4.5, 0.0),
@@ -160,8 +153,6 @@ def _jittered(
 
 
 class PymunkWorld:
-    """Pure physics — no ZMQ, no game clock. Caller drives via step()."""
-
     def __init__(self, seed: int | None = None):
         self._rng: random.Random | None = None
         if seed is not None:
@@ -186,14 +177,8 @@ class PymunkWorld:
         wheel_cmds: dict[int, list[float]] | None = None,
         kicks: Iterable[int] | None = None,
     ) -> dict[str, Any]:
-        """Advance the physics by one DT.
-
-        wheel_cmds: robot_id -> length-3 wheel speeds in [-1, 1]. Missing
-            robots are driven with zero wheel speeds.
-        kicks: iterable of robot ids that should attempt a kick this tick.
-        Returns a state dict containing t, kicks (actually fired),
-        scoring_team (may be None), ball, and robots.
-        """
+        # wheel_cmds: rid -> 3 wheel speeds in [-1, 1]. Missing robots get zeros.
+        # kicks: rids to attempt a kick this tick. Returned "kicks" is rids actually fired.
         wheel_cmds = wheel_cmds or {}
         kicks = kicks or ()
 
@@ -238,7 +223,10 @@ class PymunkWorld:
     def reset_ball(self, pos: tuple[float, float] | None = None) -> None:
         self.ball.velocity = (0.0, 0.0)
         self.ball.angular_velocity = 0.0
-        self.ball.position = pos if pos is not None else (FIELD_W / 2.0, FIELD_H / 2.0)
+        if pos is None:
+            self.ball.position = (FIELD_W / 2.0, FIELD_H / 2.0)
+        else:
+            self.ball.position = (float(pos[0]), float(pos[1]))
 
     def set_robot(
         self,
@@ -247,7 +235,7 @@ class PymunkWorld:
         angle: float = 0.0,
     ) -> None:
         body = self.robots[rid]
-        body.position = pos
+        body.position = (float(pos[0]), float(pos[1]))
         body.angle = angle
         body.velocity = (0.0, 0.0)
         body.angular_velocity = 0.0
