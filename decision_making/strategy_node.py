@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from typing import TYPE_CHECKING, Any, final
@@ -160,44 +161,95 @@ def decide(
     gamestate: GameState,
     rl_skill: "RLKickSkill | None" = None,
     rl_enabled: bool = False,
-) -> tuple[dict[int, np.ndarray], list[int]]:
-    """Return (targets, kick_rids).
-
-    When rl_skill is loaded and rl_enabled is on and the ball is in the
-    opponent half, the attacker's target comes from the RL policy and a
-    kick is emitted every tick (the zone gate in try_kick_ball filters).
-    """
-    targets: dict[int, np.ndarray] = {}
+) -> tuple[dict[int, tuple[float, float, float]], list[int]]:
+    # Placeholder for Decision Tree
+    targets: dict[int, tuple[float, float, float]] = {}
     kicks: list[int] = []
     ball = gamestate.ball
-    robots = sorted(gamestate.our_team, key=lambda r: distance(r.pos, ball.pos))
 
-    ball_in_opp_half = _ball_in_opp_half(ball.pos[0])
+    for team_color, team in (("blue", gamestate.blue), ("red", gamestate.red)):
+        attacks_right = team_color == "blue"
+        team_dir = 0.0 if attacks_right else math.pi
+        sorted_team = sorted(team, key=lambda r: distance(r.pos, ball.pos))
 
-    for i, robot in enumerate(robots):
-        if i == 0:
-            if rl_enabled and rl_skill is not None and ball_in_opp_half:
-                tx, ty = rl_skill.target(robot, ball)
-                targets[robot.id] = np.array([tx, ty])
-                kicks.append(robot.id)
-            else:
-                targets[robot.id] = predict_intercept_point(ball, robot, 0.9, 2.0, 20)
-        elif i == 1:
-            goal = opp_goal(our_color)
-            to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)
-            perp = np.array([-to_goal[1], to_goal[0]])
-            targets[robot.id] = ball.pos + to_goal * 1.5 + perp * 1.0
-        else:
-            goal = our_goal(our_color)
-            targets[robot.id] = lerp(goal, ball.pos, 0.3)
+        for i, robot in enumerate(sorted_team):
+            if i == 0:  # attacker
+                if rl_enabled and rl_skill is not None:
+                    # Let the policy run anywhere on the field. It arcs around
+                    # the ball which naturally breaks the midfield stalemate.
+                    tx, ty = rl_skill.target(robot, ball, attacks_right=attacks_right)
+                    targets[robot.id] = (tx, ty, team_dir)
+                    kicks.append(robot.id)
+                else:
+                    # Classic fallback: approach from behind, no kick emit
+                    # (two classic attackers would just cancel each other out).
+                    pt = _approach_behind_ball(ball.pos, opp_goal(team_color), team_color)
+                    targets[robot.id] = (
+                        float(pt[0]), float(pt[1]),
+                        _face_point(robot.pos, ball.pos, team_dir),
+                    )
+            elif i == 1:  # supporter — sits past the ball toward opp goal
+                goal = opp_goal(team_color)
+                to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)
+                perp = np.array([-to_goal[1], to_goal[0]])
+                pt = ball.pos + to_goal * 1.5 + perp * 1.0
+                targets[robot.id] = (
+                    float(pt[0]), float(pt[1]),
+                    _face_point(robot.pos, ball.pos, team_dir),  # face the ball, not the target
+                )
+            else:  # defender — hangs back toward own goal
+                goal = our_goal(team_color)
+                pt = lerp(goal, ball.pos, 0.3)
+                targets[robot.id] = (
+                    float(pt[0]), float(pt[1]),
+                    _face_point(robot.pos, ball.pos, team_dir),
+                )
+
+    # Possession: only the attacker strictly closer to the ball emits a kick.
+    # Two opposing kicks in the same tick produce equal-opposite impulses
+    # that cancel, leaving the ball pinned between both robots.
+    if len(kicks) > 1:
+        rid_to_bot = {r.id: r for r in gamestate.blue + gamestate.red}
+        closest = min(kicks, key=lambda rid: distance(rid_to_bot[rid].pos, ball.pos))
+        kicks = [closest]
+
     return targets, kicks
 
 
-def _ball_in_opp_half(ball_x: float) -> bool:
-    # Blue-attacks-right: opp half is the right half of the field.
-    if our_color == "blue":
+def _ball_in_opp_half_for(team_color: str, ball_x: float) -> bool:
+    # Blue attacks +x (right half); red attacks -x (left half).
+    if team_color == "blue":
         return ball_x > FIELD_LENGTH / 2.0
     return ball_x < FIELD_LENGTH / 2.0
+
+
+def _face_point(
+    pos: np.ndarray, toward: np.ndarray, fallback: float
+) -> float:
+    dx, dy = float(toward[0] - pos[0]), float(toward[1] - pos[1])
+    if math.hypot(dx, dy) < 0.05:
+        return fallback
+    return math.atan2(dy, dx)
+
+
+# Offset, in meters, placed on our side of the ball so body pushes forward.
+APPROACH_OFFSET = 0.3
+# Per-team lateral offset breaks the symmetry when both attackers contest the ball.
+APPROACH_LATERAL = 0.2
+
+
+def _approach_behind_ball(
+    ball_pos: np.ndarray, opp_goal_pos: np.ndarray, team_color: str
+) -> np.ndarray:
+    to_goal = opp_goal_pos - ball_pos
+    n = np.linalg.norm(to_goal)
+    if n < 1e-6:
+        return ball_pos
+    dir_goal = to_goal / n
+    # World-frame y offset: blue approaches from the south side, red from the
+    # north side. Breaks the midfield standoff at game start.
+    lateral_y = -APPROACH_LATERAL if team_color == "blue" else APPROACH_LATERAL
+    return ball_pos - dir_goal * APPROACH_OFFSET + np.array([0.0, lateral_y])
 
 
 def main() -> None:
@@ -225,7 +277,7 @@ def main() -> None:
     backend = ZMQBackend() if args.mode == "zmq" else TCPBackend()
 
     print(f"[Strategy node] {args.mode} mode: started")
-    print(f"[Strategy node] {args.mode} mode: controlling {our_color} team")
+    print(f"[Strategy node] controlling BOTH teams (blue attacks right, red attacks left)")
 
     rl_skill = None
     rl_enabled = False
@@ -250,8 +302,8 @@ def main() -> None:
             targets, kicks = decide(gamestate, rl_skill, rl_enabled)
             backend.send_targets({
                 "targets": {
-                    str(rid): {"x": float(pos[0]), "y": float(pos[1])}
-                    for rid, pos in targets.items()
+                    str(rid): {"x": tx, "y": ty, "angle": ta}
+                    for rid, (tx, ty, ta) in targets.items()
                 }
             })
             for rid in kicks:

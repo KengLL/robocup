@@ -738,24 +738,25 @@ def main() -> None:
             robots = world_state.get("robots", {})
             b = world_state.get("ball")
 
-            # Attacker = closest blue robot to ball (matches strategy_node.decide()).
-            attacker_rid: str | None = None
+            # Attacker of each team = closest to ball (matches strategy_node.decide()).
+            attacker_rids: set[str] = set()
             if b and robots:
                 bx_w, by_w = float(b["x"]), float(b["y"])
-                blue = [(rid, r) for rid, r in robots.items() if int(rid) < 3]
-                if blue:
-                    attacker_rid = min(
-                        blue,
-                        key=lambda it: math.hypot(
-                            it[1]["x"] - bx_w, it[1]["y"] - by_w
-                        ),
-                    )[0]
+                for lo, hi in ((0, 3), (3, 6)):
+                    team = [(rid, r) for rid, r in robots.items() if lo <= int(rid) < hi]
+                    if team:
+                        attacker_rids.add(min(
+                            team,
+                            key=lambda it: math.hypot(
+                                it[1]["x"] - bx_w, it[1]["y"] - by_w
+                            ),
+                        )[0])
 
             for rid, r in robots.items():
                 c = (30, 144, 255) if int(rid) < 3 else (255, 80, 80)
                 draw_robot(
                     screen, r["x"], r["y"], r["angle"], c,
-                    is_attacker=(rid == attacker_rid),
+                    is_attacker=(rid in attacker_rids),
                 )
 
             if b:
