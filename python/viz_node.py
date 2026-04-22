@@ -69,6 +69,7 @@ HUD_MODE_LABELS = {
 # Strategy toggle
 C_STRAT_ON = (0, 255, 0)
 C_STRAT_OFF = (255, 60, 60)
+C_ATTACKER = (255, 215, 0)  # gold — outlines the robot currently acting as attacker
 
 # Manual / gamepad settings
 MANUAL_MAX_OMEGA = 5.0   # rad/s for full stick deflection
@@ -152,16 +153,23 @@ def draw_field(surf: pygame.Surface) -> None:
 
 
 def draw_robot(
-    surf: pygame.Surface, x: float, y: float, angle: float, color: tuple[int, int, int]
+    surf: pygame.Surface,
+    x: float,
+    y: float,
+    angle: float,
+    color: tuple[int, int, int],
+    is_attacker: bool = False,
 ) -> None:
     cx, cy = w2s(x, y)
     r = max(4, int(ROBOT_RADIUS * DISPLAY_SCALE))
     _ = pygame.draw.circle(surf, color, (cx, cy), r)
-    _ = pygame.draw.circle(surf, C_LINE, (cx, cy), r, 2)
+    outline = C_ATTACKER if is_attacker else C_LINE
+    width = 3 if is_attacker else 2
+    _ = pygame.draw.circle(surf, outline, (cx, cy), r, width)
     # Heading arrow
     ex = int(cx + math.cos(angle) * r * 1.4)
     ey = int(cy - math.sin(angle) * r * 1.4)
-    _ = pygame.draw.line(surf, C_LINE, (cx, cy), (ex, ey), 3)
+    _ = pygame.draw.line(surf, outline, (cx, cy), (ex, ey), 3)
     # Wheel dots
     for alpha in WHEEL_ANGLES:
         wx = int(cx + math.cos(angle + alpha) * r)
@@ -237,6 +245,7 @@ def draw_hud(
     score_blue: int = 0,
     score_red: int = 0,
     game_info: dict[str, Any] | None = None,
+    rl_kick_on: bool = False,
 ) -> None:
     """Bottom status bar — mode selector blocks + centered score + strategy toggle."""
     y0 = DISPLAY_H
@@ -337,16 +346,22 @@ def draw_hud(
         spacing=1,
     )
 
-    # Strategy toggle indicator (right side)
-    strat_label = "AUTO ON" if strategy_on else "AUTO OFF"
-    strat_color = C_STRAT_ON if strategy_on else C_STRAT_OFF
+    # Strategy + RL-kick toggle indicators (right side, stacked).
     pixel = 2
     glyph_w = 3 * pixel
     char_step = glyph_w + 1 + pixel
-    total_w = len(strat_label) * char_step - pixel
-    sx = DISPLAY_W - total_w - pad
+    strat_label = "AUTO ON" if strategy_on else "AUTO OFF"
+    strat_color = C_STRAT_ON if strategy_on else C_STRAT_OFF
+    strat_w = len(strat_label) * char_step - pixel
+    sx = DISPLAY_W - strat_w - pad
     sy = y0 + (HUD_H - 5 * pixel) // 2
     draw_pixel_text(surf, strat_label, sx, sy, strat_color, pixel=pixel, spacing=1)
+
+    rl_label = "RL ON" if rl_kick_on else "RL OFF"
+    rl_color = C_STRAT_ON if rl_kick_on else C_STRAT_OFF
+    rl_w = len(rl_label) * char_step - pixel
+    rx = sx - rl_w - pad * 2
+    draw_pixel_text(surf, rl_label, rx, sy, rl_color, pixel=pixel, spacing=1)
 
 
 def _spawn_confetti(particles: list[dict[str, Any]], team: str) -> None:
@@ -560,6 +575,7 @@ def main() -> None:
     mode_idx = 0
     prev_mode_idx = 0
     strategy_enabled = False
+    rl_kick_enabled = False
 
     # Overlay state: cleared on arrival
     target_pin: tuple[float, float] | None = None
@@ -567,7 +583,7 @@ def main() -> None:
 
     print(
         "[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  "
-        + "4=MANUAL  5=Toggle Strategy  Enter=Kick"
+        + "4=MANUAL  5=Toggle Strategy  R=Toggle RL Kick  Enter=Kick"
     )
 
     running = True
@@ -585,6 +601,13 @@ def main() -> None:
                     ))
                     state_str = "ON" if strategy_enabled else "OFF"
                     print(f"[VizNode] Strategy → {state_str}")
+                elif event.key == pygame.K_r:
+                    rl_kick_enabled = not rl_kick_enabled
+                    _ = manual_pub.send_string(json.dumps(
+                        {"rl_kick_enabled": rl_kick_enabled}
+                    ))
+                    state_str = "ON" if rl_kick_enabled else "OFF"
+                    print(f"[VizNode] RL Kick → {state_str}")
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     _ = manual_pub.send_string(json.dumps({"kick": {"0": True}}))
                     print("[VizNode] Kick requested for robot 0")
@@ -712,11 +735,29 @@ def main() -> None:
             draw_pin(screen, target_pin[0], target_pin[1], mode_color)
 
         if world_state:
-            for rid, r in world_state.get("robots", {}).items():
-                c = (30, 144, 255) if int(rid) < 3 else (255, 80, 80)
-                draw_robot(screen, r["x"], r["y"], r["angle"], c)
-
+            robots = world_state.get("robots", {})
             b = world_state.get("ball")
+
+            # Attacker = closest blue robot to ball (matches strategy_node.decide()).
+            attacker_rid: str | None = None
+            if b and robots:
+                bx_w, by_w = float(b["x"]), float(b["y"])
+                blue = [(rid, r) for rid, r in robots.items() if int(rid) < 3]
+                if blue:
+                    attacker_rid = min(
+                        blue,
+                        key=lambda it: math.hypot(
+                            it[1]["x"] - bx_w, it[1]["y"] - by_w
+                        ),
+                    )[0]
+
+            for rid, r in robots.items():
+                c = (30, 144, 255) if int(rid) < 3 else (255, 80, 80)
+                draw_robot(
+                    screen, r["x"], r["y"], r["angle"], c,
+                    is_attacker=(rid == attacker_rid),
+                )
+
             if b:
                 bx, by = w2s(b["x"], b["y"])
                 _ = pygame.draw.circle(screen, (230, 120, 0), (bx, by), 5)
@@ -740,7 +781,10 @@ def main() -> None:
                 remaining_flash,
             )
 
-        draw_hud(screen, mode_idx, strategy_enabled, score_blue, score_red, game_info)
+        draw_hud(
+            screen, mode_idx, strategy_enabled, score_blue, score_red, game_info,
+            rl_kick_on=rl_kick_enabled,
+        )
         if game_winner is not None:
             draw_winner_screen(screen, game_winner, score_blue, score_red)
         pygame.display.flip()
