@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(_HERE))
 sys.path.insert(0, _HERE)
 from config import COMMAND_PORT, DT, FIELD_H, FIELD_W, NUM_ROBOTS, VISION_PORT
 from pymunk_world import PymunkWorld
+from decision_making.skills.dribble import try_dribble_ball
 
 HALF_DURATION = 300.0  # seconds per half
 
@@ -73,6 +74,7 @@ def main() -> None:
 
     commands: dict[int, list[float]] = {i: [0.0, 0.0, 0.0] for i in range(NUM_ROBOTS)}
     pending_kicks: list[int] = []
+    dribbling: set[int] = set()   # robot ids currently dribbling
 
     score = {"blue": 0, "red": 0}
     game_time = 0.0
@@ -105,14 +107,21 @@ def main() -> None:
                     if 0 <= rid < NUM_ROBOTS:
                         pending_kicks.append(rid)
                     continue
-
+                if ctype == "dribble":
+                    rid = int(cmd["robot_id"])
+                    if cmd.get("active", False):
+                        dribbling.add(rid)
+                    else:
+                        dribbling.discard(rid)
+                    continue
                 rid = int(cmd["robot_id"])
                 if 0 <= rid < NUM_ROBOTS and "wheel_speeds" in cmd:
                     commands[rid] = cmd["wheel_speeds"]
             except zmq.Again:
                 break
 
-        state = world.step(commands, pending_kicks)
+        state = world.step(commands, pending_kicks, dribbling)
+        
         for rid in state["kicks"]:
             print(f"[SimNode] Kick by robot {rid}")
         pending_kicks.clear()

@@ -12,6 +12,7 @@ import random
 import sys
 from collections.abc import Iterable
 from typing import Any
+from decision_making.skills.dribble import try_dribble_ball
 
 import numpy as np
 import pymunk
@@ -176,6 +177,7 @@ class PymunkWorld:
         self,
         wheel_cmds: dict[int, list[float]] | None = None,
         kicks: Iterable[int] | None = None,
+        dribbling: set[int] | None = None,
     ) -> dict[str, Any]:
         # wheel_cmds: rid -> 3 wheel speeds in [-1, 1]. Missing robots get zeros.
         # kicks: rids to attempt a kick this tick. Returned "kicks" is rids actually fired.
@@ -187,11 +189,19 @@ class PymunkWorld:
             _apply_wheel_commands(body, speeds)
             _apply_damping(body, LINEAR_DAMP, ANGULAR_DAMP, DT)
 
+        dribbling = dribbling or set()
         fired: list[int] = []
         for rid in kicks:
+            if rid in dribbling:
+                continue  # dribbling takes priority — skip kick
             if 0 <= rid < len(self.robots):
                 if try_kick_ball(self.robots[rid], self.ball):
                     fired.append(rid)
+
+        # apply dribbler forces
+        for rid in dribbling:
+            if 0 <= rid < len(self.robots):
+                try_dribble_ball(self.robots[rid], self.ball, DT)
 
         _apply_damping(self.ball, BALL_DAMP, BALL_DAMP, DT)
         self.space.step(DT)
@@ -227,6 +237,10 @@ class PymunkWorld:
             self.ball.position = (FIELD_W / 2.0, FIELD_H / 2.0)
         else:
             self.ball.position = (float(pos[0]), float(pos[1]))
+
+    def apply_dribble(self, robot_id: int, dt: float) -> None:
+        if 0 <= robot_id < len(self.robots):
+         try_dribble_ball(self.robots[robot_id], self.ball, dt)
 
     def set_robot(
         self,
