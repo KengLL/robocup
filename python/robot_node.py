@@ -183,7 +183,6 @@ class RobotController:
         self._last_pos: np.ndarray | None = None
         # MANUAL mode: world-frame (vx, vy, omega) received directly from operator
         self.direct_vel: tuple[float, float, float] | None = None
-        self.dribble_requested: bool = False
 
     def set_target(
         self,
@@ -198,7 +197,6 @@ class RobotController:
         self.total_time = 0.0
         self._last_pos = None
         self.direct_vel = None
-        self.dribble_requested = False  # reset on new target
         if mode:
             self.mode = mode
 
@@ -334,10 +332,6 @@ def main() -> None:
                         _ = cmd_push.send_string(
                             json.dumps({"type": "kick", "robot_id": i})
                         )
-                for rid_str, active in data.get("dribble", {}).items():
-                    i = int(rid_str)
-                    if 0 <= i < NUM_ROBOTS:
-                        robots[i].dribble_requested = bool(active)
 
             except zmq.Again:
                 break
@@ -358,16 +352,6 @@ def main() -> None:
                     {
                         "robot_id": robot.id,
                         "wheel_speeds": wheel_speeds,
-                    }
-                )
-            )
-
-            cmd_push.send_string(
-                json.dumps(
-                    {
-                        "type": "dribble",
-                        "robot_id": robot.id,
-                        "active": robot.dribble_requested,
                     }
                 )
             )

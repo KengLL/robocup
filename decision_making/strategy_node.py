@@ -98,6 +98,11 @@ class ZMQBackend:
             json.dumps({"type": "kick", "robot_id": int(robot_id)})
         )
 
+    def send_dribble(self, robot_id: int, active: bool) -> None:
+        _ = self.cmd_push.send_string(
+            json.dumps({"type": "dribble", "robot_id": int(robot_id), "active": bool(active)})
+        )
+
 
 @final
 class TCPBackend:
@@ -155,6 +160,9 @@ class TCPBackend:
 
     def send_kick(self, robot_id: int) -> None:
         pass  # TCP mode has no command channel; kicks only work in ZMQ mode.
+
+    def send_dribble(self, robot_id: int, active: bool) -> None:
+        pass  # TCP mode has no command channel; dribble only works in ZMQ mode.
 
 
 def decide(
@@ -296,6 +304,7 @@ def main() -> None:
 
     rl_skill = None
     rl_enabled = False
+    dribble_attacker_enabled = False
 
     frame = 0
     while True:
@@ -311,6 +320,9 @@ def main() -> None:
                     rl_skill = _try_load_skill(args.rl_checkpoint)
                 rl_enabled = want and rl_skill is not None
                 print(f"[Strategy node] RL kick → {'ON' if rl_enabled else 'OFF'}")
+            if "dribble_attacker" in msg:
+                dribble_attacker_enabled = bool(msg["dribble_attacker"])
+                print(f"[Strategy node] Dribble (attacker) → {'ON' if dribble_attacker_enabled else 'OFF'}")
 
         try:
             gamestate = build_game_state(raw, our_color)
@@ -323,6 +335,14 @@ def main() -> None:
             })
             for rid in kicks:
                 backend.send_kick(rid)
+
+            # Route dribble to our team's attacker (closest to ball); everyone
+            # else gets OFF so stale state never leaks between attacker changes.
+            our_team = gamestate.blue if our_color == "blue" else gamestate.red
+            if our_team:
+                attacker_rid = min(our_team, key=lambda r: distance(r.pos, gamestate.ball.pos)).id
+                for r in our_team:
+                    backend.send_dribble(r.id, dribble_attacker_enabled and r.id == attacker_rid)
         except Exception as e:
             print(f"[ERROR] {e}")
             import traceback

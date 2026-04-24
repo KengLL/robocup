@@ -614,8 +614,8 @@ def main() -> None:
                     print("[VizNode] Kick requested for robot 0")
                 elif event.key == pygame.K_0:
                     dribble_on = not dribble_on
-                    manual_pub.send_string(json.dumps({"dribble": {"0": dribble_on}}))
-                    print(f"[VizNode] Dribble → {'ON' if dribble_on else 'OFF'}")
+                    manual_pub.send_string(json.dumps({"dribble_attacker": dribble_on}))
+                    print(f"[VizNode] Dribble (attacker) → {'ON' if dribble_on else 'OFF'}")
                 elif event.key in MODE_KEYS:
                     prev_mode_idx = mode_idx
                     mode_idx = MODE_KEYS[event.key]
