@@ -44,6 +44,9 @@ from decision_making.skills.kick import try_kick_ball  # noqa: E402
 COLLISION_ROBOT = 1
 COLLISION_BALL = 2
 COLLISION_WALL = 3
+CATEGORY_ROBOT = 0b001
+CATEGORY_BALL  = 0b010
+CATEGORY_WALL  = 0b100
 
 # Wall half-thickness, meters. Must exceed |v_max| * DT so pymunk's discrete
 # collision detection catches fast balls without CCD.
@@ -70,7 +73,10 @@ def _make_robot(
     shape = pymunk.Circle(body, ROBOT_RADIUS)
     shape.elasticity = 0.3
     shape.friction = 0.5
-    shape.filter = pymunk.ShapeFilter(categories=0b01, mask=0b11)
+    shape.filter = pymunk.ShapeFilter(
+    categories=CATEGORY_ROBOT,
+    mask=CATEGORY_ROBOT | CATEGORY_BALL | CATEGORY_WALL,
+    )
     space.add(body, shape)
     return body
 
@@ -83,46 +89,63 @@ def _make_ball(space: pymunk.Space, x: float, y: float) -> pymunk.Body:
     shape.elasticity = 0.6
     shape.friction = 0.4
     shape.collision_type = COLLISION_BALL
-    shape.filter = pymunk.ShapeFilter(categories=0b10, mask=0b11)
+    shape.filter = pymunk.ShapeFilter(
+    categories=CATEGORY_BALL,
+    mask=CATEGORY_ROBOT | CATEGORY_WALL,
+    )
     space.add(body, shape)
     return body
 
-
 def _add_walls(space: pymunk.Space) -> None:
     r = WALL_HALF_THICKNESS
-    segments = [
-        ((r, -r), (FIELD_W - r, -r)),
-        ((r, FIELD_H + r), (FIELD_W - r, FIELD_H + r)),
-        ((-r, r), (-r, GOAL_Y_MIN - r)),
-        ((-r, GOAL_Y_MAX + r), (-r, FIELD_H - r)),
-        ((FIELD_W + r, r), (FIELD_W + r, GOAL_Y_MIN - r)),
-        ((FIELD_W + r, GOAL_Y_MAX + r), (FIELD_W + r, FIELD_H - r)),
-    ]
-    for a, b in segments:
+
+    wall_filter = pymunk.ShapeFilter(
+        categories=CATEGORY_WALL,
+        mask=CATEGORY_ROBOT | CATEGORY_BALL,
+    )
+
+    robot_only_filter = pymunk.ShapeFilter(
+        categories=CATEGORY_WALL,
+        mask=CATEGORY_ROBOT,  # ball can pass
+    )
+
+    def add_seg(a, b, filt, elasticity=0.8):
         seg = pymunk.Segment(space.static_body, a, b, r)
-        seg.elasticity = 0.8
+        seg.elasticity = elasticity
         seg.friction = 0.5
         seg.collision_type = COLLISION_WALL
-        space.add(seg)
-    # back-of-goal walls that block robots but lets ball through 
-    goal_back_x_left  = -ROBOT_RADIUS       # behind left goal
-    goal_back_x_right = FIELD_W + ROBOT_RADIUS  # behind right goal
-
-    # only collide with robots (category 1), not ball (category 2)
-    robot_only_filter = pymunk.ShapeFilter(categories=0b01, mask=0b01)
-
-    for bx in (goal_back_x_left, goal_back_x_right):
-        seg = pymunk.Segment(
-            space.static_body,
-            (bx, GOAL_Y_MIN - r),
-            (bx, GOAL_Y_MAX + r),
-            r,
-        )
-        seg.elasticity = 0.3
-        seg.friction = 0.5
-        seg.filter = robot_only_filter
+        seg.filter = filt
         space.add(seg)
 
+    # --- TOP & BOTTOM WALLS (block everything)
+    add_seg((r, -r), (FIELD_W - r, -r), wall_filter)                # bottom
+    add_seg((r, FIELD_H + r), (FIELD_W - r, FIELD_H + r), wall_filter)  # top
+
+    # --- LEFT WALL (split around goal gap)
+    add_seg((-r, r), (-r, GOAL_Y_MIN), wall_filter)                 # below goal
+    add_seg((-r, GOAL_Y_MAX), (-r, FIELD_H - r), wall_filter)       # above goal
+
+    # --- RIGHT WALL (split around goal gap)
+    add_seg((FIELD_W + r, r), (FIELD_W + r, GOAL_Y_MIN), wall_filter)
+    add_seg((FIELD_W + r, GOAL_Y_MAX), (FIELD_W + r, FIELD_H - r), wall_filter)
+
+    # --- BACK OF GOALS (robots blocked, ball passes through)
+    goal_back_x_left = -ROBOT_RADIUS
+    goal_back_x_right = FIELD_W + ROBOT_RADIUS
+
+    add_seg(
+        (goal_back_x_left, GOAL_Y_MIN),
+        (goal_back_x_left, GOAL_Y_MAX),
+        robot_only_filter,
+        elasticity=0.3,
+    )
+
+    add_seg(
+        (goal_back_x_right, GOAL_Y_MIN),
+        (goal_back_x_right, GOAL_Y_MAX),
+        robot_only_filter,
+        elasticity=0.3,
+    )
 
 def _apply_damping(body: pymunk.Body, lin_damp: float, ang_damp: float, dt: float) -> None:
     lin_factor = max(0.0, 1.0 - lin_damp * dt)
