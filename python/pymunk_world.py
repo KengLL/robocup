@@ -63,12 +63,15 @@ SOLVER_ITERATIONS = 30
 
 SPAWN_JITTER_STD = 0.10 # meters per axis, only applied when a seed is given
 
-# Demo spawn layout: 2 blue offensive players (ids 0-1) versus a single
-# red goalie (id 2) parked in front of the right-side goal.
+# 3v3 spawn layout, mirrored across x = FIELD_W/2: each team has a goalie
+# (ids 0, 3) in front of its goal and two forwards on the half-field line.
 NOMINAL_SPAWNS: list[tuple[float, float, float]] = [
-    (3.0, 1.8, 0.0),
-    (3.0, 4.2, 0.0),
+    (0.5, 3.0, 0.0),
+    (3.0, 1.5, 0.0),
+    (3.0, 4.5, 0.0),
     (8.5, 3.0, math.pi),
+    (6.0, 1.5, math.pi),
+    (6.0, 4.5, math.pi),
 ]
 
 

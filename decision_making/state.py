@@ -6,10 +6,10 @@ import numpy as np
 DRIBBLER_RANGE = 0.05  # ball within this = "has ball", meters
 FIELD_LENGTH = 9.0  # meters
 FIELD_WIDTH = 6.0  # meters
-# Demo scenario: 2 blue offensive players against 1 red goalie. Robot ids
-# 0..TEAM_BLUE_SIZE-1 are blue; ids TEAM_BLUE_SIZE..TEAM_BLUE_SIZE+TEAM_RED_SIZE-1 are red.
-TEAM_BLUE_SIZE = 2
-TEAM_RED_SIZE = 1
+# 3v3. Robot ids 0..TEAM_BLUE_SIZE-1 are blue;
+# ids TEAM_BLUE_SIZE..TEAM_BLUE_SIZE+TEAM_RED_SIZE-1 are red.
+TEAM_BLUE_SIZE = 3
+TEAM_RED_SIZE = 3
 
 
 @dataclass

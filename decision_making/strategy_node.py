@@ -172,6 +172,7 @@ def decide(
     rl_skill: "RLKickSkill | None" = None,
     rl_enabled: bool = False,
     sticky_attackers: dict[str, int] | None = None,
+    kicked_off: bool = True,
 ) -> tuple[dict[int, tuple[float, float, float]], list[int], set[int]]:
     # Placeholder for Decision Tree
     targets: dict[int, tuple[float, float, float]] = {}
@@ -180,10 +181,15 @@ def decide(
     sticky = sticky_attackers if sticky_attackers is not None else {}
     ball = gamestate.ball
 
+    # Goalie ids 0 (blue) and 3 (red) are excluded from strategy: they sit at
+    # spawn so the four forwards can play 2v2 without a goalie wandering out.
+    STATIC_GOALIE_IDS = {0, 3}
+
     for team_color, team in (("blue", gamestate.blue), ("red", gamestate.red)):
         attacks_right = team_color == "blue"
         team_dir = 0.0 if attacks_right else math.pi
-        sorted_team = sorted(team, key=lambda r: distance(r.pos, ball.pos))
+        active = [r for r in team if r.id not in STATIC_GOALIE_IDS]
+        sorted_team = sorted(active, key=lambda r: distance(r.pos, ball.pos))
 
         # Single-robot teams act as the lone goalie: stay on the line from
         # own goal to the ball at a small standoff. No kick is emitted.
@@ -233,7 +239,7 @@ def decide(
                     # robot doesn't "shift" sideways with its back to the target.
                     # Once near the approach point, rotate to team_dir to line
                     # up the kick.
-                    pt = _approach_behind_ball(ball.pos, opp_goal(team_color), team_color)
+                    pt = _approach_behind_ball(ball.pos, opp_goal(team_color))
                     dx, dy = float(pt[0] - robot.pos[0]), float(pt[1] - robot.pos[1])
                     dist = math.hypot(dx, dy)
                     ta = team_dir if dist < ATTACKER_ALIGN_DIST else math.atan2(dy, dx)
@@ -243,8 +249,15 @@ def decide(
             elif i == 1:  # supporter — sits past the ball toward opp goal
                 goal = opp_goal(team_color)
                 to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)
-                perp = np.array([-to_goal[1], to_goal[0]])
-                pt = ball.pos + to_goal * 1.5 + perp * 1.0
+                # Fixed +y perp so blue/red mirror across midfield instead of
+                # point-mirroring through the ball (which sent red diagonally).
+                perp = np.array([0.0, 1.0])
+                if not kicked_off:
+                    # Pre-kickoff: hold on own side so the two supporters don't
+                    # cross paths and collide while the attackers set up.
+                    pt = ball.pos - to_goal * 1.5 + perp * 1.0
+                else:
+                    pt = ball.pos + to_goal * 1.5 + perp * 1.0
                 targets[robot.id] = (
                     float(pt[0]), float(pt[1]),
                     _face_point(robot.pos, ball.pos, team_dir),  # face the ball, not the target
@@ -326,17 +339,17 @@ def _goalie_target(
 
 
 def _approach_behind_ball(
-    ball_pos: np.ndarray, opp_goal_pos: np.ndarray, team_color: str
+    ball_pos: np.ndarray, opp_goal_pos: np.ndarray
 ) -> np.ndarray:
     to_goal = opp_goal_pos - ball_pos
     n = np.linalg.norm(to_goal)
     if n < 1e-6:
         return ball_pos
     dir_goal = to_goal / n
-    # World-frame y offset: blue approaches from the south side, red from the
-    # north side. Breaks the midfield standoff at game start.
-    lateral_y = -APPROACH_LATERAL if team_color == "blue" else APPROACH_LATERAL
-    return ball_pos - dir_goal * APPROACH_OFFSET + np.array([0.0, lateral_y])
+    # Both attackers approach from the south so the kickoff layout is mirror-
+    # symmetric across midfield. Still breaks the standoff because the two
+    # attackers end up offset in x.
+    return ball_pos - dir_goal * APPROACH_OFFSET + np.array([0.0, -APPROACH_LATERAL])
 
 
 def main() -> None:
@@ -370,6 +383,10 @@ def main() -> None:
     rl_enabled = False
     dribble_attacker_enabled = False
     sticky_attackers: dict[str, int] = {}
+    # Flips True once the ball has been kicked/pushed. Before that, supporters
+    # hold on their own half so they don't barrel into each other at midfield.
+    kicked_off = False
+    KICKOFF_BALL_SPEED = 0.1
 
     frame = 0
     while True:
@@ -391,8 +408,11 @@ def main() -> None:
 
         try:
             gamestate = build_game_state(raw, our_color)
+            if not kicked_off and gamestate.ball.speed > KICKOFF_BALL_SPEED:
+                kicked_off = True
+                print("[Strategy node] kickoff")
             targets, kicks, attacker_rids = decide(
-                gamestate, rl_skill, rl_enabled, sticky_attackers
+                gamestate, rl_skill, rl_enabled, sticky_attackers, kicked_off
             )
             backend.send_targets({
                 "targets": {

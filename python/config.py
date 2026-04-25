@@ -36,10 +36,9 @@ GOAL_Y_MIN = (FIELD_H - GOAL_MOUTH_H) / 2.0
 GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
 
 # ── Team composition ─────────────────────────────────────────────────────────
-# Demo scenario: 2 blue offensive players against a single red goalie.
-# IDs 0..TEAM_BLUE_SIZE-1 are blue; remaining ids up to NUM_ROBOTS are red.
-TEAM_BLUE_SIZE = 2
-TEAM_RED_SIZE = 1
+# 3v3. IDs 0..TEAM_BLUE_SIZE-1 are blue; remaining ids up to NUM_ROBOTS are red.
+TEAM_BLUE_SIZE = 3
+TEAM_RED_SIZE = 3
 NUM_ROBOTS = TEAM_BLUE_SIZE + TEAM_RED_SIZE
 TEAM_S = TEAM_BLUE_SIZE  # legacy alias, kept for any external readers
 
