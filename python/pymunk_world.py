@@ -70,6 +70,7 @@ def _make_robot(
     shape = pymunk.Circle(body, ROBOT_RADIUS)
     shape.elasticity = 0.3
     shape.friction = 0.5
+    shape.filter = pymunk.ShapeFilter(categories=0b01, mask=0b11)
     space.add(body, shape)
     return body
 
@@ -82,6 +83,7 @@ def _make_ball(space: pymunk.Space, x: float, y: float) -> pymunk.Body:
     shape.elasticity = 0.6
     shape.friction = 0.4
     shape.collision_type = COLLISION_BALL
+    shape.filter = pymunk.ShapeFilter(categories=0b10, mask=0b11)
     space.add(body, shape)
     return body
 
@@ -101,6 +103,24 @@ def _add_walls(space: pymunk.Space) -> None:
         seg.elasticity = 0.8
         seg.friction = 0.5
         seg.collision_type = COLLISION_WALL
+        space.add(seg)
+    # back-of-goal walls that block robots but lets ball through 
+    goal_back_x_left  = -ROBOT_RADIUS       # behind left goal
+    goal_back_x_right = FIELD_W + ROBOT_RADIUS  # behind right goal
+
+    # only collide with robots (category 1), not ball (category 2)
+    robot_only_filter = pymunk.ShapeFilter(categories=0b01, mask=0b01)
+
+    for bx in (goal_back_x_left, goal_back_x_right):
+        seg = pymunk.Segment(
+            space.static_body,
+            (bx, GOAL_Y_MIN - r),
+            (bx, GOAL_Y_MAX + r),
+            r,
+        )
+        seg.elasticity = 0.3
+        seg.friction = 0.5
+        seg.filter = robot_only_filter
         space.add(seg)
 
 

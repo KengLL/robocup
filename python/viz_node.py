@@ -773,7 +773,7 @@ def main() -> None:
         remaining_flash = goal_flash_until - time.monotonic()
         if remaining_flash > 0.0:
             draw_goal_flash(
-                screen,
+                screen, 
                 goal_flash_team,
                 goal_flash_score_text,
                 remaining_flash,
