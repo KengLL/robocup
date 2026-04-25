@@ -326,6 +326,9 @@ def main() -> None:
                     if 0 <= i < NUM_ROBOTS:
                         robots[i].set_direct_vel(vel["vx"], vel["vy"], vel["w"])
 
+                if data.get("type") == "ball_stuck_toggle":
+                    _ = cmd_push.send_string(json.dumps({"type": "ball_stuck_toggle"}))
+                    
                 for rid_str in data.get("kick", {}):
                     i = int(rid_str)
                     if 0 <= i < NUM_ROBOTS:

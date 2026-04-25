@@ -544,7 +544,7 @@ def main() -> None:
 
     screen = pygame.display.set_mode((DISPLAY_W, DISPLAY_H + HUD_H))
     pygame.display.set_caption(
-        "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: MANUAL (WASD+QE / gamepad)  |  Enter: Kick"
+        "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: MANUAL (WASD+QE / gamepad)  |  5: Strategy  |  R: RL Kick  |  Enter: Kick  |  9: Toggle Ball Stuck Reset | 0: Toggle Dribble"
     )
     clock = pygame.time.Clock()
 
@@ -577,6 +577,9 @@ def main() -> None:
     strategy_enabled = False
     rl_kick_enabled = False
     dribble_on = False
+    ball_stuck_on = False
+    ball_stuck_popup_until = 0.0
+    last_ball_stuck_seq = -1
 
     # Overlay state: cleared on arrival
     target_pin: tuple[float, float] | None = None
@@ -616,6 +619,10 @@ def main() -> None:
                     dribble_on = not dribble_on
                     manual_pub.send_string(json.dumps({"dribble_attacker": dribble_on}))
                     print(f"[VizNode] Dribble (attacker) → {'ON' if dribble_on else 'OFF'}")
+                elif event.key == pygame.K_9:
+                    ball_stuck_on = not ball_stuck_on
+                    manual_pub.send_string(json.dumps({"type": "ball_stuck_toggle"}))
+                    print(f"[VizNode] Ball Stuck Reset → {'ON' if ball_stuck_on else 'OFF'}")
                 elif event.key in MODE_KEYS:
                     prev_mode_idx = mode_idx
                     mode_idx = MODE_KEYS[event.key]
@@ -689,15 +696,20 @@ def main() -> None:
                     phase_popup_text = new_phase
                     phase_popup_until = time.monotonic() + 3.0
                     print(f"[VizNode] Phase → {new_phase}")
-                    game_winner = game_info.get("winner", None)
+                game_winner = game_info.get("winner", None)
+                ball_stuck_seq = game_info.get("ball_stuck_seq", 0)
+                if ball_stuck_seq != last_ball_stuck_seq and last_ball_stuck_seq != -1:
+                    ball_stuck_popup_until = time.monotonic() + 3.0
+                    print("[VizNode] Ball stuck — reset")
+                last_ball_stuck_seq = ball_stuck_seq
             last_goal = world_state.get("last_goal")
+
             if isinstance(last_goal, dict):
                 seq = int(last_goal.get("seq", -1))
                 if seq > last_goal_seq_seen:
                     last_goal_seq_seen = seq
                     scored_post_team = str(last_goal.get("team", "blue"))
                     # Reverse effect color relative to post scored on:
-                    # score on red post -> blue flash, score on blue post -> red flash.
                     goal_flash_team = "blue" if scored_post_team == "red" else "red"
                     gscore = last_goal.get("score", {})
                     goal_flash_score_text = f"{int(gscore.get('blue', score_blue))}-{int(gscore.get('red', score_red))}"
@@ -783,6 +795,9 @@ def main() -> None:
             screen, mode_idx, strategy_enabled, score_blue, score_red, game_info,
             rl_kick_on=rl_kick_enabled,
         )
+        stuck_remaining = ball_stuck_popup_until - time.monotonic()
+        if stuck_remaining > 0.0:
+            draw_phase_popup(screen, "GAMESTUCK", stuck_remaining)
         if game_winner is not None:
             draw_winner_screen(screen, game_winner, score_blue, score_red)
         pygame.display.flip()
