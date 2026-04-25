@@ -9,7 +9,11 @@ from __future__ import annotations
 import math
 import os
 import sys
-from typing import Any, override
+from typing import Any
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
 
 import gymnasium as gym
 import numpy as np

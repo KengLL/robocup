@@ -574,8 +574,6 @@ def main() -> None:
     phase_popup_until = 0.0
     last_phase_seen = "FIRST HALF"
     game_winner = None  # "blue", "red", "draw", or None
-    ball_stuck_popup_until = 0.0
-    last_ball_stuck_seq = -1
     last_goal_seq_seen = -1
     goal_flash_team = "blue"
     goal_flash_until = 0.0
@@ -708,10 +706,6 @@ def main() -> None:
                     phase_popup_until = time.monotonic() + 3.0
                     print(f"[VizNode] Phase → {new_phase}")
                     game_winner = game_info.get("winner", None)
-                ball_stuck_seq = game_info.get("ball_stuck_seq", 0)
-                if ball_stuck_seq != last_ball_stuck_seq and last_ball_stuck_seq != -1:
-                    ball_stuck_popup_until = time.monotonic() + 3.0
-                last_ball_stuck_seq = ball_stuck_seq
             last_goal = world_state.get("last_goal")
             if isinstance(last_goal, dict):
                 seq = int(last_goal.get("seq", -1))
@@ -781,14 +775,10 @@ def main() -> None:
         if phase_remaining > 0.0:
             draw_phase_popup(screen, phase_popup_text, phase_remaining)
 
-        stuck_remaining = ball_stuck_popup_until - time.monotonic()
-        if stuck_remaining > 0.0:
-            draw_phase_popup(screen, "GAMESTUCK", stuck_remaining)
-
         remaining_flash = goal_flash_until - time.monotonic()
         if remaining_flash > 0.0:
             draw_goal_flash(
-                screen,
+                screen, 
                 goal_flash_team,
                 goal_flash_score_text,
                 remaining_flash,
