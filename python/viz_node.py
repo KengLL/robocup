@@ -36,7 +36,9 @@ from config import (  # noqa: E402
     GOAL_Y_MAX,
     GOAL_Y_MIN,
     MANUAL_PORT,
+    NUM_ROBOTS,
     ROBOT_RADIUS,
+    TEAM_BLUE_SIZE,
     VISION_PORT,
     WHEEL_ANGLES,
 )
@@ -747,7 +749,7 @@ def main() -> None:
             attacker_rids: set[str] = set()
             if b and robots:
                 bx_w, by_w = float(b["x"]), float(b["y"])
-                for lo, hi in ((0, 3), (3, 6)):
+                for lo, hi in ((0, TEAM_BLUE_SIZE), (TEAM_BLUE_SIZE, NUM_ROBOTS)):
                     team = [(rid, r) for rid, r in robots.items() if lo <= int(rid) < hi]
                     if team:
                         attacker_rids.add(min(
@@ -758,7 +760,7 @@ def main() -> None:
                         )[0])
 
             for rid, r in robots.items():
-                c = (30, 144, 255) if int(rid) < 3 else (255, 80, 80)
+                c = (30, 144, 255) if int(rid) < TEAM_BLUE_SIZE else (255, 80, 80)
                 draw_robot(
                     screen, r["x"], r["y"], r["angle"], c,
                     is_attacker=(rid in attacker_rids),

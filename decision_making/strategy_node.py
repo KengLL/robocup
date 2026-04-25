@@ -30,6 +30,8 @@ from decision_making.geometry import distance, lerp, opp_goal, our_goal  # noqa:
 from decision_making.prediction import predict_intercept_point  # noqa: E402
 from decision_making.state import (  # noqa: E402
     FIELD_LENGTH,
+    GOAL_Y_MAX,
+    GOAL_Y_MIN,
     GameState,
     build_game_state,
 )
@@ -180,6 +182,14 @@ def decide(
         team_dir = 0.0 if attacks_right else math.pi
         sorted_team = sorted(team, key=lambda r: distance(r.pos, ball.pos))
 
+        # Single-robot teams act as the lone goalie: stay on the line from
+        # own goal to the ball at a small standoff. No kick is emitted.
+        if len(sorted_team) == 1:
+            robot = sorted_team[0]
+            tx, ty, ta = _goalie_target(ball.pos, team_color)
+            targets[robot.id] = (tx, ty, ta)
+            continue
+
         for i, robot in enumerate(sorted_team):
             if i == 0:  # attacker
                 # Policy was trained with robot west of ball (blue-attacks-right).
@@ -259,6 +269,34 @@ APPROACH_LATERAL = 0.2
 # Within this distance of the approach point, the attacker rotates to the kick
 # direction. Farther away, it faces the motion direction for natural driving.
 ATTACKER_ALIGN_DIST = 0.6
+
+
+# Goalie sits this far in front of the goal line, on the line from own
+# goal center to the ball. Small enough that the goalie covers the mouth.
+GOALIE_STANDOFF = 0.4
+# Keep the goalie a hair inside the posts so it never wedges against a wall.
+GOALIE_Y_MARGIN = 0.05
+
+
+def _goalie_target(
+    ball_pos: np.ndarray, team_color: str
+) -> tuple[float, float, float]:
+    goal = our_goal(team_color)
+    to_ball = ball_pos - goal
+    n = float(np.linalg.norm(to_ball))
+    if n < 1e-6:
+        tx, ty = float(goal[0]), float(goal[1])
+    else:
+        pt = goal + (to_ball / n) * GOALIE_STANDOFF
+        tx, ty = float(pt[0]), float(pt[1])
+
+    ty = float(np.clip(ty, GOAL_Y_MIN + GOALIE_Y_MARGIN, GOAL_Y_MAX - GOALIE_Y_MARGIN))
+
+    dx, dy = float(ball_pos[0] - tx), float(ball_pos[1] - ty)
+    angle = math.atan2(dy, dx) if math.hypot(dx, dy) > 0.05 else (
+        0.0 if team_color == "blue" else math.pi
+    )
+    return tx, ty, angle
 
 
 def _approach_behind_ball(

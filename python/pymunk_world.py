@@ -51,14 +51,12 @@ WALL_HALF_THICKNESS = 0.10
 
 SPAWN_JITTER_STD = 0.10 # meters per axis, only applied when a seed is given
 
-# Default spawn layout (blue 0-2 left, red 3-5 right).
+# Demo spawn layout: 2 blue offensive players (ids 0-1) versus a single
+# red goalie (id 2) parked in front of the right-side goal.
 NOMINAL_SPAWNS: list[tuple[float, float, float]] = [
-    (2.0, 3.0, 0.0),
-    (1.5, 4.5, 0.0),
-    (0.8, 3.0, 0.0),
-    (7.0, 3.0, math.pi),
-    (7.5, 1.5, math.pi),
-    (8.2, 3.0, math.pi),
+    (3.0, 1.8, 0.0),
+    (3.0, 4.2, 0.0),
+    (8.5, 3.0, math.pi),
 ]
 
 
