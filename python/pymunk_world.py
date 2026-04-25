@@ -52,6 +52,15 @@ CATEGORY_WALL  = 0b100
 # collision detection catches fast balls without CCD.
 WALL_HALF_THICKNESS = 0.10
 
+# Real SSL kick-speed cap. Doubles as a tunneling safety: ball travel/substep
+# stays well under the wall band even at full speed.
+MAX_BALL_SPEED = 6.5
+
+# Physics substeps per outer tick. More iterations on the constraint solver
+# resolve robot+ball+wall pin contacts that otherwise pop the ball through.
+PHYSICS_SUBSTEPS = 4
+SOLVER_ITERATIONS = 30
+
 SPAWN_JITTER_STD = 0.10 # meters per axis, only applied when a seed is given
 
 # Demo spawn layout: 2 blue offensive players (ids 0-1) versus a single
@@ -204,6 +213,7 @@ class PymunkWorld:
 
         self.space: pymunk.Space = pymunk.Space()
         self.space.gravity = (0, 0)
+        self.space.iterations = SOLVER_ITERATIONS
         _add_walls(self.space)
 
         self.robots: list[pymunk.Body] = []
@@ -224,13 +234,10 @@ class PymunkWorld:
         # kicks: rids to attempt a kick this tick. Returned "kicks" is rids actually fired.
         wheel_cmds = wheel_cmds or {}
         kicks = kicks or ()
-
-        for i, body in enumerate(self.robots):
-            speeds = wheel_cmds.get(i, [0.0, 0.0, 0.0])
-            _apply_wheel_commands(body, speeds)
-            _apply_damping(body, LINEAR_DAMP, ANGULAR_DAMP, DT)
-
         dribbling = dribbling or set()
+
+        # Kicks fire once per tick: impulses are instantaneous, not cleared
+        # by space.step, so they don't need re-applying inside the substep loop.
         fired: list[int] = []
         for rid in kicks:
             if rid in dribbling:
@@ -239,13 +246,27 @@ class PymunkWorld:
                 if try_kick_ball(self.robots[rid], self.ball):
                     fired.append(rid)
 
-        # apply dribbler forces
-        for rid in dribbling:
-            if 0 <= rid < len(self.robots):
-                try_dribble_ball(self.robots[rid], self.ball, DT)
+        # Clamp before stepping so kicks + dribble pushes can't tunnel walls.
+        bv = self.ball.velocity
+        bs = bv.length
+        if bs > MAX_BALL_SPEED:
+            self.ball.velocity = bv * (MAX_BALL_SPEED / bs)
 
-        _apply_damping(self.ball, BALL_DAMP, BALL_DAMP, DT)
-        self.space.step(DT)
+        # Forces (wheels, dribble spring, damping) must be re-applied inside
+        # the substep loop: pymunk clears body.force/torque after each step().
+        sub_dt = DT / PHYSICS_SUBSTEPS
+        for _ in range(PHYSICS_SUBSTEPS):
+            for i, body in enumerate(self.robots):
+                speeds = wheel_cmds.get(i, [0.0, 0.0, 0.0])
+                _apply_wheel_commands(body, speeds)
+                _apply_damping(body, LINEAR_DAMP, ANGULAR_DAMP, sub_dt)
+
+            for rid in dribbling:
+                if 0 <= rid < len(self.robots):
+                    try_dribble_ball(self.robots[rid], self.ball, sub_dt)
+
+            _apply_damping(self.ball, BALL_DAMP, BALL_DAMP, sub_dt)
+            self.space.step(sub_dt)
         self.sim_time += DT
 
         return {
