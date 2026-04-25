@@ -39,10 +39,6 @@ from decision_making.skills.dribble import try_dribble_ball
 
 HALF_DURATION = 300.0  # seconds per half
 
-BALL_STUCK_THRESHOLD = 0.02  # ball moved less than this (m) per tick = stuck
-BALL_STUCK_DURATION = 10.0  # seconds before ball is reset to center
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="RoboCup simulation node")
     _ = parser.add_argument(
@@ -84,10 +80,6 @@ def main() -> None:
     game_phase = "FIRST HALF"
     last_goal: dict[str, Any] | None = None
     goal_seq = 0
-
-    ball_stuck_timer = 0.0
-    ball_stuck_seq = 0
-    ball_last_pos = (FIELD_W / 2, FIELD_H / 2)
 
     print(
         f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}"
@@ -184,22 +176,6 @@ def main() -> None:
                         f"[SimNode] OVERTIME FULL TIME — Blue: {score['blue']}  "
                         + f"Red: {score['red']}"
                     )
-
-        # Ball-stuck detection.
-        bx, by = state["ball"]["x"], state["ball"]["y"]
-        ball_moved = math.hypot(bx - ball_last_pos[0], by - ball_last_pos[1])
-        if ball_moved < BALL_STUCK_THRESHOLD:
-            ball_stuck_timer += DT
-            if ball_stuck_timer >= BALL_STUCK_DURATION:
-                print("[SimNode] Ball stuck — resetting to center")
-                world.reset_ball()
-                ball_stuck_timer = 0.0
-                ball_last_pos = (FIELD_W / 2, FIELD_H / 2)
-                ball_stuck_seq += 1
-        else:
-            ball_stuck_timer = 0.0
-            ball_last_pos = (bx, by)
-
         if half_over and winner is None:
             if score["blue"] > score["red"]:
                 winner = "blue"
@@ -221,7 +197,6 @@ def main() -> None:
                 "red_score": score["red"],
                 "half_over": half_over,
                 "phase": game_phase,
-                "ball_stuck_seq": ball_stuck_seq,
                 "winner": winner,
             },
             "ball": state["ball"],
