@@ -631,7 +631,7 @@ def main() -> None:
                     # Leaving MANUAL: send zero velocity so robot stops immediately
                     if MODES[prev_mode_idx] == "MANUAL" and mode_idx != prev_mode_idx:
                         _ = manual_pub.send_string(json.dumps(
-                            {"direct": {"0": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
+                            {"direct": {"2": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
                         ))
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -675,7 +675,7 @@ def main() -> None:
                     w = -rx * MANUAL_MAX_OMEGA    # right stick right = clockwise = -ω
 
             _ = manual_pub.send_string(json.dumps(
-                {"direct": {"0": {"vx": vx, "vy": vy, "w": w}}}
+                {"direct": {"2": {"vx": vx, "vy": vy, "w": w}}}
             ))
 
         # Drain vision (keep latest frame)
