@@ -36,8 +36,8 @@ from config import (  # noqa: E402
     GOAL_Y_MAX,
     GOAL_Y_MIN,
     MANUAL_PORT,
-    NUM_ROBOTS,
     ROBOT_RADIUS,
+    STRATEGY_PORT,
     TEAM_BLUE_SIZE,
     VISION_PORT,
     WHEEL_ANGLES,
@@ -555,10 +555,18 @@ def main() -> None:
     vision_sub.setsockopt_string(zmq.SUBSCRIBE, "")
     vision_sub.setsockopt(zmq.RCVTIMEO, 0)
 
+    # Strategy stream — used as the source of truth for the attacker outline
+    # so the gold ring matches the robot strategy_node actually told to kick.
+    strategy_sub = ctx.socket(zmq.SUB)
+    _ = strategy_sub.connect(f"tcp://localhost:{STRATEGY_PORT}")
+    strategy_sub.setsockopt_string(zmq.SUBSCRIBE, "")
+    strategy_sub.setsockopt(zmq.RCVTIMEO, 0)
+
     manual_pub = ctx.socket(zmq.PUB)
     _ = manual_pub.bind(f"tcp://*:{MANUAL_PORT}")
 
     world_state: dict[str, Any] | None = None
+    attacker_rids: set[str] = set()
     score_blue = 0
     score_red = 0
     game_info = None
@@ -630,7 +638,7 @@ def main() -> None:
                     # Leaving MANUAL: send zero velocity so robot stops immediately
                     if MODES[prev_mode_idx] == "MANUAL" and mode_idx != prev_mode_idx:
                         _ = manual_pub.send_string(json.dumps(
-                            {"direct": {"0": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
+                            {"direct": {"2": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
                         ))
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -674,13 +682,21 @@ def main() -> None:
                     w = -rx * MANUAL_MAX_OMEGA    # right stick right = clockwise = -ω
 
             _ = manual_pub.send_string(json.dumps(
-                {"direct": {"0": {"vx": vx, "vy": vy, "w": w}}}
+                {"direct": {"2": {"vx": vx, "vy": vy, "w": w}}}
             ))
 
         # Drain vision (keep latest frame)
         while True:
             try:
                 world_state = json.loads(vision_sub.recv_string())
+            except zmq.Again:
+                break
+
+        # Drain strategy (keep latest attacker rids).
+        while True:
+            try:
+                strat_msg = json.loads(strategy_sub.recv_string())
+                attacker_rids = {str(rid) for rid in strat_msg.get("attackers", [])}
             except zmq.Again:
                 break
 
@@ -751,20 +767,9 @@ def main() -> None:
             robots = world_state.get("robots", {})
             b = world_state.get("ball")
 
-            # Attacker of each team = closest to ball (matches strategy_node.decide()).
-            attacker_rids: set[str] = set()
-            if b and robots:
-                bx_w, by_w = float(b["x"]), float(b["y"])
-                for lo, hi in ((0, TEAM_BLUE_SIZE), (TEAM_BLUE_SIZE, NUM_ROBOTS)):
-                    team = [(rid, r) for rid, r in robots.items() if lo <= int(rid) < hi]
-                    if team:
-                        attacker_rids.add(min(
-                            team,
-                            key=lambda it: math.hypot(
-                                it[1]["x"] - bx_w, it[1]["y"] - by_w
-                            ),
-                        )[0])
-
+            # attacker_rids comes from strategy_node's published "attackers"
+            # field — single source of truth so the gold outline matches the
+            # robot that actually emits the kick this tick.
             for rid, r in robots.items():
                 c = (30, 144, 255) if int(rid) < TEAM_BLUE_SIZE else (255, 80, 80)
                 draw_robot(

@@ -171,10 +171,13 @@ def decide(
     gamestate: GameState,
     rl_skill: "RLKickSkill | None" = None,
     rl_enabled: bool = False,
-) -> tuple[dict[int, tuple[float, float, float]], list[int]]:
+    sticky_attackers: dict[str, int] | None = None,
+) -> tuple[dict[int, tuple[float, float, float]], list[int], set[int]]:
     # Placeholder for Decision Tree
     targets: dict[int, tuple[float, float, float]] = {}
     kicks: list[int] = []
+    attacker_rids: set[int] = set()
+    sticky = sticky_attackers if sticky_attackers is not None else {}
     ball = gamestate.ball
 
     for team_color, team in (("blue", gamestate.blue), ("red", gamestate.red)):
@@ -188,10 +191,29 @@ def decide(
             robot = sorted_team[0]
             tx, ty, ta = _goalie_target(ball.pos, team_color)
             targets[robot.id] = (tx, ty, ta)
+            sticky.pop(team_color, None)
             continue
+
+        # Sticky attacker with hysteresis. The supporter's path runs past the
+        # ball, so per-tick "closest is attacker" flips the role mid-stride and
+        # the wrong robot ends up emitting the kick. Keep the incumbent unless
+        # a teammate is meaningfully closer.
+        last_rid = sticky.get(team_color)
+        incumbent = (
+            next((r for r in sorted_team if r.id == last_rid), None)
+            if last_rid is not None
+            else None
+        )
+        if incumbent is not None and (
+            distance(sorted_team[0].pos, ball.pos) + ATTACKER_HYSTERESIS
+            >= distance(incumbent.pos, ball.pos)
+        ):
+            sorted_team = [incumbent] + [r for r in sorted_team if r.id != incumbent.id]
+        sticky[team_color] = sorted_team[0].id
 
         for i, robot in enumerate(sorted_team):
             if i == 0:  # attacker
+                attacker_rids.add(robot.id)
                 # Policy was trained with robot west of ball (blue-attacks-right).
                 # Mirror works cleanly only when the attacker is on its own side
                 # of the ball along the attack axis; otherwise the policy drifts
@@ -243,7 +265,7 @@ def decide(
         closest = min(kicks, key=lambda rid: distance(rid_to_bot[rid].pos, ball.pos))
         kicks = [closest]
 
-    return targets, kicks
+    return targets, kicks, attacker_rids
 
 
 def _ball_in_opp_half_for(team_color: str, ball_x: float) -> bool:
@@ -269,6 +291,10 @@ APPROACH_LATERAL = 0.2
 # Within this distance of the approach point, the attacker rotates to the kick
 # direction. Farther away, it faces the motion direction for natural driving.
 ATTACKER_ALIGN_DIST = 0.6
+# Incumbent attacker keeps the role unless a teammate is at least this much
+# closer to the ball. Bigger than typical per-tick noise and the supporter's
+# transient pass-by distance.
+ATTACKER_HYSTERESIS = 0.4
 
 
 # Goalie sits this far in front of the goal line, on the line from own
@@ -343,6 +369,7 @@ def main() -> None:
     rl_skill = None
     rl_enabled = False
     dribble_attacker_enabled = False
+    sticky_attackers: dict[str, int] = {}
 
     frame = 0
     while True:
@@ -364,12 +391,15 @@ def main() -> None:
 
         try:
             gamestate = build_game_state(raw, our_color)
-            targets, kicks = decide(gamestate, rl_skill, rl_enabled)
+            targets, kicks, attacker_rids = decide(
+                gamestate, rl_skill, rl_enabled, sticky_attackers
+            )
             backend.send_targets({
                 "targets": {
                     str(rid): {"x": tx, "y": ty, "angle": ta}
                     for rid, (tx, ty, ta) in targets.items()
-                }
+                },
+                "attackers": sorted(attacker_rids),
             })
             for rid in kicks:
                 backend.send_kick(rid)
