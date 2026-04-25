@@ -27,6 +27,7 @@ degenerate strategy.
 
 from __future__ import annotations
 
+import itertools
 import math
 from dataclasses import dataclass
 
@@ -41,6 +42,8 @@ class RewardConfig:
     robot_to_ball_scale: float = 0.1
     kick_on_target_scale: float = 0.2
     kick_cone_half_angle: float = math.radians(20.0)
+    teammate_spacing_scale: float = 0.0
+    teammate_spacing_threshold: float = 0.9  # meters; penalize pairs closer than this
     our_color: str = "blue"
 
 
@@ -49,6 +52,10 @@ class Reward:
     Stateful — needs to remember last tick's distances to compute the
     potential delta. Call ``reset(obs)`` once per episode, then ``step(
     obs, info)`` after every env step.
+
+    The observation dict passed here should be the ground-truth state
+    from SoccerEnv (not delayed/noisy wrapper output) so the reward
+    signal itself is not corrupted by sensor noise.
     """
 
     def __init__(self, config: RewardConfig | None = None) -> None:
@@ -56,6 +63,7 @@ class Reward:
         self._last_ball_to_goal: float | None = None
         self._last_ball_to_our_goal: float | None = None
         self._last_closest_to_ball: float | None = None
+        self._last_teammate_proximity: float | None = None
 
     # ── target geometry ─────────────────────────────────────────────────
 
@@ -83,6 +91,7 @@ class Reward:
         ogx, ogy = self._our_goal()
         self._last_ball_to_our_goal = math.hypot(ogx - bx, ogy - by)
         self._last_closest_to_ball = self._closest_robot_dist(obs)
+        self._last_teammate_proximity = self._teammate_proximity(obs)
 
     def step(self, obs: dict, info: dict) -> float:
         if self._last_ball_to_goal is None:
@@ -124,6 +133,19 @@ class Reward:
         )
         self._last_closest_to_ball = d_closest
 
+        # 3b. Anti-clustering potential. Let P(s) be a pairwise
+        # proximity cost over our three robots:
+        #   P = sum_ij max(0, d_thresh - d_ij)^2
+        # Reward uses potential delta with negative potential, i.e.
+        # +scale * (P_prev - P_now). Spreading out (lower P) gets
+        # positive reward; collapsing into a cluster gets penalized.
+        prox = self._teammate_proximity(obs)
+        if self._last_teammate_proximity is not None:
+            r += self.cfg.teammate_spacing_scale * (
+                self._last_teammate_proximity - prox
+            )
+        self._last_teammate_proximity = prox
+
         # 4. Kick on target.
         for rid in info.get("kicked", []):
             # Use ball velocity *after* the impulse — info["kicked"] is
@@ -151,3 +173,18 @@ class Reward:
                        obs["robots"][str(i)]["y"] - by)
             for i in ours
         )
+
+    def _teammate_proximity(self, obs: dict) -> float:
+        ours = self._our_robot_ids(obs)
+        if len(ours) < 2:
+            return 0.0
+
+        threshold = self.cfg.teammate_spacing_threshold
+        proximity = 0.0
+        for i, j in itertools.combinations(ours, 2):
+            ri = obs["robots"][str(i)]
+            rj = obs["robots"][str(j)]
+            dij = math.hypot(ri["x"] - rj["x"], ri["y"] - rj["y"])
+            shortfall = max(0.0, threshold - dij)
+            proximity += shortfall * shortfall
+        return proximity

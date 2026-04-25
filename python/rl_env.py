@@ -72,7 +72,8 @@ class RoboCupRLEnv(gym.Env):
         action_smoothness_coef: float = 0.005, # -coef * ||a_t - a_{t-1}||^2 penalty
         controller_mode: str = "2005_INVERSION",
         num_active_opponents: int = 2,         # 3=full strength, 2=no goalie, 1=chaser only
-        randomize_ball_spawn: bool = False,    # uniform over field (minus wall margin)
+        random_ball_prob: float = 0.5,         # 0.5 => 50% center, 50% random ball
+        reward_use_corrupted_obs: bool = False,
     ) -> None:
         super().__init__()
 
@@ -82,7 +83,8 @@ class RoboCupRLEnv(gym.Env):
         self.action_smoothness_coef = float(action_smoothness_coef)
         self.controller_mode = controller_mode
         self.num_active_opponents = max(0, min(int(num_active_opponents), N_OURS))
-        self.randomize_ball_spawn = bool(randomize_ball_spawn)
+        self.random_ball_prob = float(np.clip(random_ball_prob, 0.0, 1.0))
+        self.reward_use_corrupted_obs = bool(reward_use_corrupted_obs)
 
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(ACT_DIM,), dtype=np.float32
@@ -126,10 +128,10 @@ class RoboCupRLEnv(gym.Env):
             np.random.seed(seed)
 
         true_obs = self._env.reset(seed=seed)
-        if self.randomize_ball_spawn:
+        if np.random.random() < self.random_ball_prob:
             # Uniform in-bounds spawn, well inside the walls so the ball
             # isn't already touching anything. np.random is the seeded
-            # global state above → reproducible for a given seed.
+            # global state above -> reproducible for a given seed.
             bx = float(np.random.uniform(0.7, FIELD_W - 0.7))
             by = float(np.random.uniform(0.7, FIELD_H - 0.7))
             self._env.ball.position = (bx, by)
@@ -138,9 +140,11 @@ class RoboCupRLEnv(gym.Env):
             true_obs = self._env.get_obs()
         self._obs_wrapper.reset(seed=seed)
         corrupted = self._obs_wrapper.observe(true_obs)
-        # Reward potential needs a starting reference; use the corrupted
-        # obs so its potential matches what the policy actually sees.
-        self._reward.reset(corrupted)
+        # Reward potential uses either true or corrupted state, controlled
+        # by reward_use_corrupted_obs. Default is true state so reward
+        # remains stable even when policy observations are noisy.
+        reward_obs = corrupted if self.reward_use_corrupted_obs else true_obs
+        self._reward.reset(reward_obs)
         for c in list(self._controllers) + list(self._red_controllers):
             c.target = None
             c.target_angle = None
@@ -212,7 +216,8 @@ class RoboCupRLEnv(gym.Env):
 
             true_obs, _, _, info = self._env.step(env_action)
             corrupted = self._obs_wrapper.observe(true_obs)
-            total_reward += self._reward.step(corrupted, info)
+            reward_obs = corrupted if self.reward_use_corrupted_obs else true_obs
+            total_reward += self._reward.step(reward_obs, info)
 
             if info["goal"] is not None and goal_team is None:
                 goal_team = info["goal"]

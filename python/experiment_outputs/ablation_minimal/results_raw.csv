@@ -1,0 +1,13 @@
+condition,seed,win_rate,goal_diff,goals_for,goals_against,mean_teammate_distance_m,mean_action_delta
+baseline_original,0,0.0,-3,0,3,0.718,0.3688
+baseline_original,1,0.0,-9,0,9,0.901,0.3017
+baseline_original,2,0.0,0,0,0,0.752,0.2648
+reward_fix,0,0.05,1,1,0,0.716,0.2986
+reward_fix,1,0.0,0,0,0,0.811,0.3177
+reward_fix,2,0.0,0,0,0,0.851,0.3004
+reward_fix_plus_state_random,0,0.0,-3,0,3,0.722,0.2794
+reward_fix_plus_state_random,1,0.0,-6,0,6,0.849,0.3307
+reward_fix_plus_state_random,2,0.05,0,1,1,0.93,0.289
+reward_fix_plus_state_random_plus_coord,0,0.05,-1,1,2,0.797,0.318
+reward_fix_plus_state_random_plus_coord,1,0.0,-8,0,8,0.892,0.3044
+reward_fix_plus_state_random_plus_coord,2,0.0,0,0,0,0.9,0.3316

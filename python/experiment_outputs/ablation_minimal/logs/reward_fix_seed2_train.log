@@ -1,0 +1,57 @@
+$ /Users/kenglien/robo-cup/.venv/bin/python train_ppo.py --seed 2 --save /Users/kenglien/robo-cup/python/experiment_outputs/ablation_minimal/checkpoints/reward_fix_seed2.pt --total-steps 24576 --n-envs 4 --horizon 128 --epochs 4 --batch-size 128 --action-repeat 4 --action-smoothness-coef 0.002 --max-steps 600 --num-active-opponents 2 --reward-source true --random-ball-prob 0.0 --teammate-spacing-scale 0.0
+
+[stdout]
+[train] n_envs=4  horizon=128  steps/update=512  updates=48  action_repeat=4  random_ball_prob=0.00  reward_source=true  team_spacing_scale=0.000  physics_ticks_total=98,304
+[upd    1/48] step=     512  sps=  2300  ep_ret=+0.000  ep_len=0  goals=+0/-0  pi_l=-0.0455  v_l=4.3113  ent=+5.026  kl=+0.0233  clip=0.25  lr=3.0e-04  [KL-stop]
+[upd    2/48] step=    1024  sps=  2711  ep_ret=-2.793  ep_len=150  goals=+0/-0  pi_l=-0.0459  v_l=0.1034  ent=+5.028  kl=+0.0095  clip=0.15  lr=2.9e-04
+[upd    3/48] step=    1536  sps=  2782  ep_ret=-2.038  ep_len=148  goals=+0/-1  pi_l=-0.0312  v_l=0.1498  ent=+5.034  kl=+0.0112  clip=0.11  lr=2.9e-04
+[upd    4/48] step=    2048  sps=  2806  ep_ret=-1.904  ep_len=150  goals=+0/-0  pi_l=-0.0365  v_l=0.0799  ent=+5.040  kl=+0.0060  clip=0.15  lr=2.8e-04
+[upd    5/48] step=    2560  sps=  2746  ep_ret=-1.473  ep_len=150  goals=+0/-0  pi_l=-0.0363  v_l=0.0769  ent=+5.042  kl=+0.0083  clip=0.11  lr=2.7e-04
+[upd    6/48] step=    3072  sps=  2806  ep_ret=-2.690  ep_len=150  goals=+0/-0  pi_l=-0.0395  v_l=0.0916  ent=+5.043  kl=+0.0131  clip=0.14  lr=2.7e-04
+[upd    7/48] step=    3584  sps=  2866  ep_ret=-1.841  ep_len=143  goals=+0/-2  pi_l=-0.0270  v_l=0.2597  ent=+5.051  kl=+0.0133  clip=0.15  lr=2.6e-04  [KL-stop]
+[upd    8/48] step=    4096  sps=  2917  ep_ret=-4.220  ep_len=150  goals=+0/-0  pi_l=-0.0391  v_l=0.1354  ent=+5.057  kl=+0.0138  clip=0.14  lr=2.6e-04  [KL-stop]
+[upd    9/48] step=    4608  sps=  2957  ep_ret=-2.627  ep_len=150  goals=+0/-0  pi_l=-0.0384  v_l=0.0449  ent=+5.060  kl=+0.0031  clip=0.12  lr=2.5e-04
+[upd   10/48] step=    5120  sps=  2986  ep_ret=-2.012  ep_len=150  goals=+0/-0  pi_l=-0.0436  v_l=0.0689  ent=+5.065  kl=+0.0055  clip=0.15  lr=2.4e-04
+[upd   11/48] step=    5632  sps=  3015  ep_ret=-1.420  ep_len=150  goals=+0/-0  pi_l=-0.0403  v_l=0.0417  ent=+5.064  kl=+0.0142  clip=0.16  lr=2.4e-04
+[upd   12/48] step=    6144  sps=  3027  ep_ret=-1.462  ep_len=150  goals=+0/-0  pi_l=-0.0343  v_l=0.0377  ent=+5.063  kl=+0.0140  clip=0.13  lr=2.3e-04
+[upd   13/48] step=    6656  sps=  3044  ep_ret=-0.044  ep_len=149  goals=+0/-1  pi_l=-0.0299  v_l=0.1635  ent=+5.062  kl=+0.0043  clip=0.11  lr=2.2e-04
+[upd   14/48] step=    7168  sps=  3059  ep_ret=-0.887  ep_len=150  goals=+0/-0  pi_l=-0.0401  v_l=0.1425  ent=+5.063  kl=-0.0009  clip=0.14  lr=2.2e-04
+[upd   15/48] step=    7680  sps=  3077  ep_ret=-3.897  ep_len=150  goals=+0/-0  pi_l=-0.0343  v_l=0.1271  ent=+5.067  kl=+0.0064  clip=0.17  lr=2.1e-04
+[upd   16/48] step=    8192  sps=  3090  ep_ret=-2.811  ep_len=150  goals=+0/-0  pi_l=-0.0332  v_l=0.1103  ent=+5.073  kl=+0.0067  clip=0.12  lr=2.1e-04
+[upd   17/48] step=    8704  sps=  3103  ep_ret=-1.514  ep_len=150  goals=+0/-0  pi_l=-0.0300  v_l=0.1007  ent=+5.075  kl=+0.0069  clip=0.10  lr=2.0e-04
+[upd   18/48] step=    9216  sps=  3114  ep_ret=-0.559  ep_len=150  goals=+0/-0  pi_l=-0.0357  v_l=0.0327  ent=+5.074  kl=+0.0068  clip=0.13  lr=1.9e-04
+[upd   19/48] step=    9728  sps=  3090  ep_ret=-2.720  ep_len=150  goals=+0/-0  pi_l=-0.0253  v_l=0.1140  ent=+5.073  kl=+0.0084  clip=0.10  lr=1.9e-04
+[upd   20/48] step=   10240  sps=  3085  ep_ret=-1.297  ep_len=136  goals=+1/-0  pi_l=-0.0314  v_l=0.1584  ent=+5.074  kl=+0.0076  clip=0.08  lr=1.8e-04
+[upd   21/48] step=   10752  sps=  3089  ep_ret=-4.313  ep_len=150  goals=+0/-0  pi_l=-0.0315  v_l=0.0929  ent=+5.072  kl=+0.0117  clip=0.10  lr=1.7e-04
+[upd   22/48] step=   11264  sps=  3094  ep_ret=-1.483  ep_len=150  goals=+0/-0  pi_l=-0.0287  v_l=0.0763  ent=+5.068  kl=+0.0104  clip=0.09  lr=1.7e-04
+[upd   23/48] step=   11776  sps=  3102  ep_ret=-2.299  ep_len=150  goals=+0/-0  pi_l=-0.0331  v_l=0.0606  ent=+5.066  kl=+0.0012  clip=0.07  lr=1.6e-04
+[upd   24/48] step=   12288  sps=  3110  ep_ret=-1.146  ep_len=150  goals=+0/-0  pi_l=-0.0324  v_l=0.0319  ent=+5.066  kl=+0.0050  clip=0.08  lr=1.6e-04
+[upd   25/48] step=   12800  sps=  3118  ep_ret=-0.496  ep_len=150  goals=+0/-0  pi_l=-0.0345  v_l=0.0379  ent=+5.064  kl=+0.0058  clip=0.10  lr=1.5e-04
+[upd   26/48] step=   13312  sps=  3123  ep_ret=-2.506  ep_len=150  goals=+0/-0  pi_l=-0.0274  v_l=0.1315  ent=+5.065  kl=+0.0011  clip=0.05  lr=1.4e-04
+[upd   27/48] step=   13824  sps=  3130  ep_ret=-2.664  ep_len=150  goals=+0/-0  pi_l=-0.0299  v_l=0.0740  ent=+5.068  kl=+0.0075  clip=0.09  lr=1.4e-04
+[upd   28/48] step=   14336  sps=  3137  ep_ret=-1.572  ep_len=150  goals=+0/-0  pi_l=-0.0282  v_l=0.0529  ent=+5.070  kl=+0.0052  clip=0.07  lr=1.3e-04
+[upd   29/48] step=   14848  sps=  3141  ep_ret=-2.093  ep_len=148  goals=+0/-1  pi_l=-0.0199  v_l=0.1414  ent=+5.073  kl=+0.0018  clip=0.05  lr=1.2e-04
+[upd   30/48] step=   15360  sps=  3140  ep_ret=-2.881  ep_len=148  goals=+0/-1  pi_l=-0.0164  v_l=0.1737  ent=+5.079  kl=+0.0114  clip=0.06  lr=1.2e-04
+[upd   31/48] step=   15872  sps=  3145  ep_ret=-3.719  ep_len=150  goals=+0/-0  pi_l=-0.0260  v_l=0.0733  ent=+5.081  kl=+0.0058  clip=0.05  lr=1.1e-04
+[upd   32/48] step=   16384  sps=  3149  ep_ret=-1.173  ep_len=149  goals=+0/-1  pi_l=-0.0206  v_l=0.1471  ent=+5.083  kl=+0.0038  clip=0.04  lr=1.1e-04
+[upd   33/48] step=   16896  sps=  3153  ep_ret=-3.112  ep_len=150  goals=+0/-0  pi_l=-0.0253  v_l=0.0468  ent=+5.083  kl=+0.0140  clip=0.06  lr=1.0e-04
+[upd   34/48] step=   17408  sps=  3158  ep_ret=-0.420  ep_len=150  goals=+0/-0  pi_l=-0.0245  v_l=0.1515  ent=+5.081  kl=+0.0063  clip=0.04  lr=9.4e-05
+[upd   35/48] step=   17920  sps=  3161  ep_ret=+0.760  ep_len=150  goals=+0/-0  pi_l=-0.0183  v_l=0.0651  ent=+5.080  kl=+0.0020  clip=0.02  lr=8.7e-05
+[upd   36/48] step=   18432  sps=  3165  ep_ret=-1.848  ep_len=150  goals=+0/-0  pi_l=-0.0199  v_l=0.0796  ent=+5.080  kl=+0.0015  clip=0.02  lr=8.1e-05
+[upd   37/48] step=   18944  sps=  3169  ep_ret=-2.152  ep_len=148  goals=+0/-1  pi_l=-0.0173  v_l=0.1240  ent=+5.081  kl=+0.0040  clip=0.01  lr=7.5e-05
+[upd   38/48] step=   19456  sps=  3172  ep_ret=-2.780  ep_len=150  goals=+0/-0  pi_l=-0.0219  v_l=0.1169  ent=+5.080  kl=+0.0047  clip=0.03  lr=6.9e-05
+[upd   39/48] step=   19968  sps=  3176  ep_ret=-1.704  ep_len=150  goals=+0/-0  pi_l=-0.0145  v_l=0.0517  ent=+5.080  kl=+0.0026  clip=0.01  lr=6.3e-05
+[upd   40/48] step=   20480  sps=  3179  ep_ret=-0.113  ep_len=150  goals=+0/-0  pi_l=-0.0158  v_l=0.1627  ent=+5.078  kl=-0.0012  clip=0.01  lr=5.6e-05
+[upd   41/48] step=   20992  sps=  3182  ep_ret=-1.254  ep_len=150  goals=+0/-0  pi_l=-0.0148  v_l=0.0783  ent=+5.078  kl=+0.0044  clip=0.01  lr=5.0e-05
+[upd   42/48] step=   21504  sps=  3185  ep_ret=-1.622  ep_len=150  goals=+0/-0  pi_l=-0.0106  v_l=0.1116  ent=+5.079  kl=-0.0015  clip=0.00  lr=4.4e-05
+[upd   43/48] step=   22016  sps=  3188  ep_ret=-0.260  ep_len=148  goals=+0/-1  pi_l=-0.0068  v_l=0.2111  ent=+5.078  kl=+0.0008  clip=0.00  lr=3.7e-05
+[upd   44/48] step=   22528  sps=  3188  ep_ret=-1.424  ep_len=150  goals=+0/-0  pi_l=-0.0087  v_l=0.0968  ent=+5.078  kl=-0.0008  clip=0.00  lr=3.1e-05
+[upd   45/48] step=   23040  sps=  3190  ep_ret=-0.721  ep_len=147  goals=+0/-1  pi_l=-0.0056  v_l=0.1484  ent=+5.078  kl=+0.0007  clip=0.00  lr=2.5e-05
+[upd   46/48] step=   23552  sps=  3192  ep_ret=-0.766  ep_len=150  goals=+0/-0  pi_l=-0.0062  v_l=0.0373  ent=+5.077  kl=-0.0002  clip=0.00  lr=1.9e-05
+[upd   47/48] step=   24064  sps=  3195  ep_ret=-0.714  ep_len=150  goals=+0/-0  pi_l=-0.0034  v_l=0.0365  ent=+5.076  kl=-0.0004  clip=0.00  lr=1.2e-05
+[upd   48/48] step=   24576  sps=  3197  ep_ret=-1.276  ep_len=150  goals=+0/-0  pi_l=-0.0016  v_l=0.1733  ent=+5.076  kl=-0.0000  clip=0.00  lr=6.3e-06
+[train] saved → /Users/kenglien/robo-cup/python/experiment_outputs/ablation_minimal/checkpoints/reward_fix_seed2.pt
+
+
+[stderr]
+

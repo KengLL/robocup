@@ -1,0 +1,38 @@
+$ /Users/kenglien/robo-cup/.venv/bin/python eval_ppo.py --checkpoint /Users/kenglien/robo-cup/python/experiment_outputs/ablation_minimal/checkpoints/baseline_original_seed0.pt --seed 1000 --episodes 20 --action-repeat 4 --max-steps 600 --num-active-opponents 2 --deterministic --reward-source corrupted --random-ball-prob 0.0 --teammate-spacing-scale 0.0
+
+[stdout]
+  ep 00  ret=-2.396  len=150  goals=+0/-0
+  ep 01  ret=-3.048  len=150  goals=+0/-0
+  ep 02  ret=+1.972  len=150  goals=+0/-0
+  ep 03  ret=-3.353  len=150  goals=+0/-0
+  ep 04  ret=+0.997  len=150  goals=+0/-0
+  ep 05  ret=-2.894  len=150  goals=+0/-0
+  ep 06  ret=-4.666  len=146  goals=+0/-1
+  ep 07  ret=-3.065  len=150  goals=+0/-1
+  ep 08  ret=-0.561  len=150  goals=+0/-1
+  ep 09  ret=-0.208  len=150  goals=+0/-1
+  ep 10  ret=-3.192  len=150  goals=+0/-1
+  ep 11  ret=+2.109  len=150  goals=+0/-1
+  ep 12  ret=-2.706  len=150  goals=+0/-1
+  ep 13  ret=-3.302  len=150  goals=+0/-1
+  ep 14  ret=-2.739  len=150  goals=+0/-1
+  ep 15  ret=-2.192  len=150  goals=+0/-1
+  ep 16  ret=-3.008  len=150  goals=+0/-1
+  ep 17  ret=+1.999  len=150  goals=+0/-1
+  ep 18  ret=-4.514  len=149  goals=+0/-2
+  ep 19  ret=-4.693  len=143  goals=+0/-3
+
+episodes         : 20
+mean return      : -1.973 ± 2.166
+mean length      : 149.4
+goals for        : 0
+goals against    : 3
+goal diff        : -3
+win rate         : 0.000
+draw rate        : 0.850
+mean team dist   : 0.718 m
+mean |Δaction|   : 0.3688  (lower ⇒ smoother motion)
+
+
+[stderr]
+

@@ -189,15 +189,22 @@ def make_env_factory(
     action_smoothness_coef: float,
     max_steps: int,
     num_active_opponents: int = 2,
-    randomize_ball_spawn: bool = False,
+    random_ball_prob: float = 0.5,
+    reward_use_corrupted_obs: bool = False,
     robot_to_ball_scale: float | None = None,
+    teammate_spacing_scale: float = 0.0,
+    teammate_spacing_threshold: float = 0.9,
 ):
     """Returns a no-arg factory that builds one env. Marshalled into a
     child process by SubprocVecEnv via fork."""
     from rewards import RewardConfig
-    reward_config = None
+    reward_cfg_kwargs = {
+        "teammate_spacing_scale": teammate_spacing_scale,
+        "teammate_spacing_threshold": teammate_spacing_threshold,
+    }
     if robot_to_ball_scale is not None:
-        reward_config = RewardConfig(robot_to_ball_scale=robot_to_ball_scale)
+        reward_cfg_kwargs["robot_to_ball_scale"] = robot_to_ball_scale
+    reward_config = RewardConfig(**reward_cfg_kwargs)
 
     def _make() -> RoboCupRLEnv:
         env = RoboCupRLEnv(
@@ -205,7 +212,8 @@ def make_env_factory(
             action_repeat=action_repeat,
             action_smoothness_coef=action_smoothness_coef,
             num_active_opponents=num_active_opponents,
-            randomize_ball_spawn=randomize_ball_spawn,
+            random_ball_prob=random_ball_prob,
+            reward_use_corrupted_obs=reward_use_corrupted_obs,
             reward_config=reward_config,
         )
         env.reset(seed=seed)
@@ -412,11 +420,13 @@ def main() -> None:
              "(training stage 1), 2 = no goalie, 3 = full strength.",
     )
     p.add_argument(
+        "--random-ball-prob", type=float, default=0.5,
+        help="Probability of random ball spawn on reset. 0.0=center only, "
+             "0.5=mixed center/random, 1.0=random only.",
+    )
+    p.add_argument(
         "--randomize-ball", action="store_true",
-        help="Spawn the ball uniformly over the field (minus wall margin) "
-             "each reset, instead of fixed center kickoff. Use this when "
-             "training a scoring policy — centered spawns let the policy "
-             "memorize a single trajectory.",
+        help="Backward-compatible alias for --random-ball-prob 1.0",
     )
     p.add_argument(
         "--robot-to-ball-scale", type=float, default=None,
@@ -427,6 +437,22 @@ def main() -> None:
              "to kick.",
     )
     p.add_argument(
+        "--teammate-spacing-scale", type=float, default=0.0,
+        help="Potential-based anti-clustering reward scale. 0 disables.",
+    )
+    p.add_argument(
+        "--teammate-spacing-threshold", type=float, default=0.9,
+        help="Distance threshold (m) below which teammate pairs are "
+             "considered too close for anti-clustering reward.",
+    )
+    p.add_argument(
+        "--reward-source",
+        choices=["true", "corrupted"],
+        default="true",
+        help="State used for reward shaping: true physics state or noisy "
+             "corrupted observation.",
+    )
+    p.add_argument(
         "--resume", type=str, default=None,
         help="Warm-start from an existing checkpoint (model weights + "
              "obs_rms stats). LR/entropy schedules restart for this run's "
@@ -434,6 +460,10 @@ def main() -> None:
     )
     p.add_argument("--smoke", action="store_true")
     args = p.parse_args()
+
+    if args.randomize_ball:
+        args.random_ball_prob = 1.0
+    args.random_ball_prob = float(np.clip(args.random_ball_prob, 0.0, 1.0))
 
     if args.smoke:
         args.total_steps = 4096
@@ -452,8 +482,11 @@ def main() -> None:
             action_smoothness_coef=args.action_smoothness_coef,
             max_steps=args.max_steps,
             num_active_opponents=args.num_active_opponents,
-            randomize_ball_spawn=args.randomize_ball,
+            random_ball_prob=args.random_ball_prob,
+            reward_use_corrupted_obs=(args.reward_source == "corrupted"),
             robot_to_ball_scale=args.robot_to_ball_scale,
+            teammate_spacing_scale=args.teammate_spacing_scale,
+            teammate_spacing_threshold=args.teammate_spacing_threshold,
         )
         for i in range(args.n_envs)
     ]
@@ -481,6 +514,9 @@ def main() -> None:
         f"[train] n_envs={args.n_envs}  horizon={args.horizon}  "
         f"steps/update={steps_per_update}  updates={n_updates}  "
         f"action_repeat={args.action_repeat}  "
+        f"random_ball_prob={args.random_ball_prob:.2f}  "
+        f"reward_source={args.reward_source}  "
+        f"team_spacing_scale={args.teammate_spacing_scale:.3f}  "
         f"physics_ticks_total={args.total_steps * args.action_repeat:,}"
     )
 

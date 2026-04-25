@@ -1,0 +1,170 @@
+{
+  "rows": [
+    {
+      "condition": "baseline_original",
+      "seed": 0,
+      "win_rate": 0.0,
+      "goal_diff": -3,
+      "goals_for": 0,
+      "goals_against": 3,
+      "mean_teammate_distance_m": 0.718,
+      "mean_action_delta": 0.3688
+    },
+    {
+      "condition": "baseline_original",
+      "seed": 1,
+      "win_rate": 0.0,
+      "goal_diff": -9,
+      "goals_for": 0,
+      "goals_against": 9,
+      "mean_teammate_distance_m": 0.901,
+      "mean_action_delta": 0.3017
+    },
+    {
+      "condition": "baseline_original",
+      "seed": 2,
+      "win_rate": 0.0,
+      "goal_diff": 0,
+      "goals_for": 0,
+      "goals_against": 0,
+      "mean_teammate_distance_m": 0.752,
+      "mean_action_delta": 0.2648
+    },
+    {
+      "condition": "reward_fix",
+      "seed": 0,
+      "win_rate": 0.05,
+      "goal_diff": 1,
+      "goals_for": 1,
+      "goals_against": 0,
+      "mean_teammate_distance_m": 0.716,
+      "mean_action_delta": 0.2986
+    },
+    {
+      "condition": "reward_fix",
+      "seed": 1,
+      "win_rate": 0.0,
+      "goal_diff": 0,
+      "goals_for": 0,
+      "goals_against": 0,
+      "mean_teammate_distance_m": 0.811,
+      "mean_action_delta": 0.3177
+    },
+    {
+      "condition": "reward_fix",
+      "seed": 2,
+      "win_rate": 0.0,
+      "goal_diff": 0,
+      "goals_for": 0,
+      "goals_against": 0,
+      "mean_teammate_distance_m": 0.851,
+      "mean_action_delta": 0.3004
+    },
+    {
+      "condition": "reward_fix_plus_state_random",
+      "seed": 0,
+      "win_rate": 0.0,
+      "goal_diff": -3,
+      "goals_for": 0,
+      "goals_against": 3,
+      "mean_teammate_distance_m": 0.722,
+      "mean_action_delta": 0.2794
+    },
+    {
+      "condition": "reward_fix_plus_state_random",
+      "seed": 1,
+      "win_rate": 0.0,
+      "goal_diff": -6,
+      "goals_for": 0,
+      "goals_against": 6,
+      "mean_teammate_distance_m": 0.849,
+      "mean_action_delta": 0.3307
+    },
+    {
+      "condition": "reward_fix_plus_state_random",
+      "seed": 2,
+      "win_rate": 0.05,
+      "goal_diff": 0,
+      "goals_for": 1,
+      "goals_against": 1,
+      "mean_teammate_distance_m": 0.93,
+      "mean_action_delta": 0.289
+    },
+    {
+      "condition": "reward_fix_plus_state_random_plus_coord",
+      "seed": 0,
+      "win_rate": 0.05,
+      "goal_diff": -1,
+      "goals_for": 1,
+      "goals_against": 2,
+      "mean_teammate_distance_m": 0.797,
+      "mean_action_delta": 0.318
+    },
+    {
+      "condition": "reward_fix_plus_state_random_plus_coord",
+      "seed": 1,
+      "win_rate": 0.0,
+      "goal_diff": -8,
+      "goals_for": 0,
+      "goals_against": 8,
+      "mean_teammate_distance_m": 0.892,
+      "mean_action_delta": 0.3044
+    },
+    {
+      "condition": "reward_fix_plus_state_random_plus_coord",
+      "seed": 2,
+      "win_rate": 0.0,
+      "goal_diff": 0,
+      "goals_for": 0,
+      "goals_against": 0,
+      "mean_teammate_distance_m": 0.9,
+      "mean_action_delta": 0.3316
+    }
+  ],
+  "aggregated": [
+    {
+      "condition": "baseline_original",
+      "win_rate_mean": 0.0,
+      "win_rate_std": 0.0,
+      "goal_diff_mean": -4.0,
+      "goal_diff_std": 4.58257569495584,
+      "team_dist_mean_m": 0.7903333333333333,
+      "team_dist_std_m": 0.09733618717277423,
+      "action_delta_mean": 0.3117666666666667,
+      "action_delta_std": 0.05272573691598188
+    },
+    {
+      "condition": "reward_fix",
+      "win_rate_mean": 0.016666666666666666,
+      "win_rate_std": 0.02886751345948129,
+      "goal_diff_mean": 0.3333333333333333,
+      "goal_diff_std": 0.5773502691896257,
+      "team_dist_mean_m": 0.7926666666666667,
+      "team_dist_std_m": 0.06934214687571574,
+      "action_delta_mean": 0.30556666666666665,
+      "action_delta_std": 0.010546247357867787
+    },
+    {
+      "condition": "reward_fix_plus_state_random",
+      "win_rate_mean": 0.016666666666666666,
+      "win_rate_std": 0.02886751345948129,
+      "goal_diff_mean": -3.0,
+      "goal_diff_std": 3.0,
+      "team_dist_mean_m": 0.8336666666666667,
+      "team_dist_std_m": 0.10484432904708457,
+      "action_delta_mean": 0.2997,
+      "action_delta_std": 0.027272513635526893
+    },
+    {
+      "condition": "reward_fix_plus_state_random_plus_coord",
+      "win_rate_mean": 0.016666666666666666,
+      "win_rate_std": 0.02886751345948129,
+      "goal_diff_mean": -3.0,
+      "goal_diff_std": 4.358898943540674,
+      "team_dist_mean_m": 0.863,
+      "team_dist_std_m": 0.057297469403107135,
+      "action_delta_mean": 0.318,
+      "action_delta_std": 0.013600000000000001
+    }
+  ]
+}
