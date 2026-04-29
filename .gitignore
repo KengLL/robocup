@@ -5,3 +5,13 @@
 addons/godot-git-plugin/
 *.pyc
 __pycache__/
+
+.venv/
+
+# RL training
+decision_making/rl/checkpoints/*
+!decision_making/rl/checkpoints/first_final/
+decision_making/rl/checkpoints/first_final/*
+!decision_making/rl/checkpoints/first_final/final.zip
+decision_making/rl/tb_logs/
+decision_making/rl/runs/

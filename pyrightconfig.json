@@ -1,7 +1,19 @@
 {
-  "include": ["python"],
-  "extraPaths": ["python"],
-  "pythonVersion": "3.14",
+  "include": ["python", "decision_making"],
+  "extraPaths": [".", "python"],
+  "exclude": [".venv", "**/__pycache__"],
+  "pythonVersion": "3.12",
   "venvPath": ".",
-  "venv": ".venv"
+  "venv": ".venv",
+
+  "reportUnknownVariableType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportMissingTypeStubs": "none",
+
+  "reportAny": "none",
+  "reportExplicitAny": "none",
+  "reportMissingParameterType": "none"
 }

@@ -12,7 +12,7 @@ _PYTHON_DIR = os.path.join(_ROOT, "python")
 if _PYTHON_DIR not in sys.path:
     sys.path.insert(0, _PYTHON_DIR)
 
-from config import ROBOT_RADIUS
+from config import ROBOT_RADIUS  # noqa: E402
 
 # Kick model: small rectangular contact zone in front of robot.
 KICK_ZONE_DEPTH = 0.12

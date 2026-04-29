@@ -1,11 +1,15 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
 DRIBBLER_RANGE = 0.05  # ball within this = "has ball", meters
 FIELD_LENGTH = 9.0  # meters
 FIELD_WIDTH = 6.0  # meters
-TEAM_SIZE = 3  # number of robots per team
+# 3v3. Robot ids 0..TEAM_BLUE_SIZE-1 are blue;
+# ids TEAM_BLUE_SIZE..TEAM_BLUE_SIZE+TEAM_RED_SIZE-1 are red.
+TEAM_BLUE_SIZE = 3
+TEAM_RED_SIZE = 3
 
 @dataclass
 class BallState:
@@ -48,9 +52,15 @@ class GameState:
 BLUE_GOAL = np.array([0.0, FIELD_WIDTH / 2])  # [0.0, 3.0]
 RED_GOAL = np.array([FIELD_LENGTH, FIELD_WIDTH / 2])  # [9.0, 3.0]
 
+# Goal mouth bounds (mirrors python/config.py — kept here so decision_making
+# code does not have to reach into the python/ harness for geometry).
+GOAL_MOUTH_H = 200.0 / 140.0  # ≈ 1.43 m
+GOAL_Y_MIN = (FIELD_WIDTH - GOAL_MOUTH_H) / 2.0
+GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
+
 
 # Builder
-def build_game_state(raw: dict, our_color: str = "blue") -> GameState:
+def build_game_state(raw: dict[str, Any], our_color: str = "blue") -> GameState:
     gamestate = GameState()
     gamestate.timestamp = raw.get("t", 0.0)
 
@@ -65,12 +75,12 @@ def build_game_state(raw: dict, our_color: str = "blue") -> GameState:
 
     # robots
     robots_raw = raw.get("robots", {})
-    for i in range(TEAM_SIZE):
+    for i in range(TEAM_BLUE_SIZE):
         blue_robot = robots_raw.get(str(i), {})
         gamestate.blue.append(_parse_robot(i, blue_robot))
-    for i in range(TEAM_SIZE):
-        red_robot = robots_raw.get(str(i + TEAM_SIZE), {})
-        gamestate.red.append(_parse_robot(i + TEAM_SIZE, red_robot))
+    for i in range(TEAM_RED_SIZE):
+        red_robot = robots_raw.get(str(i + TEAM_BLUE_SIZE), {})
+        gamestate.red.append(_parse_robot(i + TEAM_BLUE_SIZE, red_robot))
 
     # Check the closest robot within the dribble range
     _compute_has_ball(gamestate)
@@ -95,7 +105,7 @@ def build_game_state(raw: dict, our_color: str = "blue") -> GameState:
 
 
 # Helper
-def _parse_robot(rid: int, raw: dict) -> RobotState:
+def _parse_robot(rid: int, raw: dict[str, Any]) -> RobotState:
     return RobotState(
         id=rid,
         pos=np.array([raw.get("x", 0.0), raw.get("y", 0.0)]),

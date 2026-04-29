@@ -1,5 +1,5 @@
 import numpy as np
-from state import BallState, RobotState
+from decision_making.state import BallState, RobotState
 
 
 # predict where the robot will be in `time_ahead` seconds from now
