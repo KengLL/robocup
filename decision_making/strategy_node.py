@@ -5,6 +5,13 @@ import json
 import numpy as np
 import os
 import sys
+from BT.attacker_tree import load_rl_skill, set_rl_enabled
+
+import glob
+_ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rl", "checkpoints")
+_ckpts = sorted(glob.glob(os.path.join(_ckpt_dir, "**", "final.zip"), recursive=True))
+if _ckpts:
+    load_rl_skill(_ckpts[-1])
 
 _PYTHON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'python')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -94,7 +101,6 @@ class TCPBackend:
         except BrokenPipeError:
             print("[Strategy node] TCP mode: connection lost")
 
-
 def decide(gamestate: GameState) -> dict[int, dict]:
     from BT.tree import tick
     return tick(gamestate, OUR_COLOR)
@@ -131,11 +137,17 @@ def main() -> None:
                         "x": float(t["pos"][0]),
                         "y": float(t["pos"][1]),
                         "kick": t["kick"],
+                        "angle": t.get("angle"),
+                        "dribble": t.get("dribble", False),
                     }
                     for rid, t in targets.items()
                 }
             }
+            if raw.get("rl_kick_enabled") is not None:
+                set_rl_enabled(bool(raw["rl_kick_enabled"]))
+                print(f"[Strategy] RL kick → {'ON' if raw['rl_kick_enabled'] else 'OFF'}")
             backend.send_targets(msg)
+            
         except Exception as e:
             import traceback
             print(f"[ERROR] {e}")

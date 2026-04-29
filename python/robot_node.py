@@ -339,12 +339,13 @@ def _drain_targets(sub_socket, robots, zmq_module):
             for rid_str, info in targets.items():
                 i = int(rid_str)
                 if 0 <= i < NUM_ROBOTS:
-                    robots[i].set_target(
-                        info["x"],
-                        info["y"],
-                        info.get("mode", "2005_INVERSION"),
-                        kick=info.get("kick", False),
-                    )
+                     robots[i].set_target(
+                    info["x"],
+                    info["y"],
+                    info.get("mode", "2005_INVERSION"),
+                    info.get("angle"),
+                )
+                robots[i].dribble_requested = bool(info.get("dribble", False))
         except zmq_module.Again:
             break
 

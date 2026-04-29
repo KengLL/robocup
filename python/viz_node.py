@@ -364,7 +364,6 @@ def draw_goals(surf: pygame.Surface) -> None:
     red_rect = pygame.Rect(red_top[0], red_top[1], goal_depth_px, goal_width_px)
     pygame.draw.rect(surf, (255, 80, 80), red_rect, 0)    # filled
     pygame.draw.rect(surf, C_LINE, red_rect, 2)            # outline
-<<<<<<< HEAD
 
 def _spawn_confetti(particles: list, team: str) -> None:
     cx, cy = w2s(FIELD_W / 2.0, FIELD_H / 2.0)
@@ -525,8 +524,6 @@ def draw_winner_screen(
     total_w = len(sub) * char_step - pixel
     subx = (DISPLAY_W - total_w) // 2
     draw_pixel_text(surf, sub, subx, DISPLAY_H // 2 + 90, (160, 160, 160), pixel=pixel, spacing=1)
-=======
->>>>>>> 2cb7d26fe730916129d046412732cd3a801b23ea
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
