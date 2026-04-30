@@ -25,7 +25,7 @@ NODES = [
     ("RobotNode",    "robot_node.py",                 HERE),
     ("VizNode",      "viz_node.py",                   HERE),
     ("StrategyBlue", "strategy_node.py --color blue", DECISION_DIR),
-    ("StrategyRed",  "strategy_node.py --color red",  DECISION_DIR),
+    #("StrategyRed",  "strategy_node.py --color red",  DECISION_DIR),
 ]
 
 processes: list[subprocess.Popen] = []

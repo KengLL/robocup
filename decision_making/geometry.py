@@ -1,5 +1,5 @@
 import numpy as np
-from decision_making.state import BLUE_GOAL, RED_GOAL, RobotState
+from state import BLUE_GOAL, RED_GOAL, RobotState
 
 
 # check if there is a clear shot from the robot to the goal

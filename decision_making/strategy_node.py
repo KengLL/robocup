@@ -1,29 +1,27 @@
-# receives world state, runs strategy & control the game
+# receives world state, runs strategy & controls the game
 from __future__ import annotations
+
 import argparse
+import glob
 import json
-import numpy as np
-import math
 import os
 import sys
-from typing import TYPE_CHECKING, Any, final
-from BT.attacker_tree import load_rl_skill, set_rl_enabled
+from typing import Any, final
 
 import numpy as np
 
-import glob
-_ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rl", "checkpoints")
-_ckpts = sorted(glob.glob(os.path.join(_ckpt_dir, "**", "final.zip"), recursive=True))
-if _ckpts:
-    load_rl_skill(_ckpts[-1])
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(THIS_DIR)
+PYTHON_DIR = os.path.join(PROJECT_ROOT, "python")
 
-if TYPE_CHECKING:
-    from decision_making.skills.rl_kick import RLKickSkill
+sys.path.insert(0, THIS_DIR)
+sys.path.insert(0, PYTHON_DIR)
+sys.path.insert(0, PROJECT_ROOT)
 
-_PYTHON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'python')
-sys.path.insert(0, _PYTHON_DIR)
-# Add project root so `decision_making.*` resolves when run as a standalone script
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from BT.attacker_tree import load_rl_skill, set_rl_enabled  # noqa: E402
+from geometry import distance, our_goal  # noqa: E402
+from state import GameState, RobotState, build_game_state  # noqa: E402
+
 
 VISION_PORT = 9090
 STRATEGY_PORT = 9091
@@ -31,19 +29,18 @@ COMMAND_PORT = 9092
 MANUAL_PORT = 9093
 
 DEFAULT_RL_CHECKPOINT = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "rl", "checkpoints", "first_final", "final.zip",
+    THIS_DIR,
+    "rl",
+    "checkpoints",
+    "first_final",
+    "final.zip",
 )
 
-from decision_making.geometry import distance, lerp, opp_goal, our_goal  # noqa: E402
-from decision_making.prediction import predict_intercept_point  # noqa: E402
-from decision_making.state import (  # noqa: E402
-    FIELD_LENGTH,
-    GOAL_Y_MAX,
-    GOAL_Y_MIN,
-    GameState,
-    build_game_state,
-)
+_ckpt_dir = os.path.join(THIS_DIR, "rl", "checkpoints")
+_ckpts = sorted(glob.glob(os.path.join(_ckpt_dir, "**", "final.zip"), recursive=True))
+_rl_tree_loaded = False
+if _ckpts:
+    _rl_tree_loaded = load_rl_skill(_ckpts[-1])
 
 our_color = "blue"
 
@@ -52,27 +49,25 @@ our_color = "blue"
 class ZMQBackend:
     def __init__(self, color: str):
         import zmq
+
         self.zmq = zmq
         self.context = zmq.Context()
 
         self.vision_sub = self.context.socket(zmq.SUB)
-        _ = self.vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
+        self.vision_sub.connect(f"tcp://localhost:{VISION_PORT}")
         self.vision_sub.setsockopt_string(zmq.SUBSCRIBE, "")
         self.vision_sub.setsockopt(zmq.RCVTIMEO, 100)
 
-        port = STRATEGY_PORT if color == "blue" else STRATEGY_PORT_RED
         self.strategy_pub = self.context.socket(zmq.PUB)
-        _ = self.strategy_pub.bind(f"tcp://*:{STRATEGY_PORT}")
+        self.strategy_pub.bind(f"tcp://*:{STRATEGY_PORT}")
 
-        # Listen to viz for the RL-kick toggle.
         self.manual_sub = self.context.socket(zmq.SUB)
-        _ = self.manual_sub.connect(f"tcp://localhost:{MANUAL_PORT}")
+        self.manual_sub.connect(f"tcp://localhost:{MANUAL_PORT}")
         self.manual_sub.setsockopt_string(zmq.SUBSCRIBE, "")
-        self.manual_sub.setsockopt(zmq.RCVTIMEO, 0)  # non-blocking
+        self.manual_sub.setsockopt(zmq.RCVTIMEO, 0)
 
-        # Push kick commands straight to the sim.
         self.cmd_push = self.context.socket(zmq.PUSH)
-        _ = self.cmd_push.connect(f"tcp://localhost:{COMMAND_PORT}")
+        self.cmd_push.connect(f"tcp://localhost:{COMMAND_PORT}")
 
         print(
             f"[Strategy node] ZMQ mode: vision←:{VISION_PORT}  "
@@ -84,7 +79,7 @@ class ZMQBackend:
             raw = json.loads(self.vision_sub.recv_string())
         except self.zmq.Again:
             return None
-        # Drain buffered frames so we always process the most recent state.
+
         while True:
             try:
                 raw = json.loads(self.vision_sub.recv_string(flags=self.zmq.NOBLOCK))
@@ -102,23 +97,27 @@ class ZMQBackend:
         return msgs
 
     def send_targets(self, msg: dict[str, Any]) -> None:
-        _ = self.strategy_pub.send_string(json.dumps(msg))
+        self.strategy_pub.send_string(json.dumps(msg))
 
     def send_kick(self, robot_id: int) -> None:
-        _ = self.cmd_push.send_string(
+        self.cmd_push.send_string(
             json.dumps({"type": "kick", "robot_id": int(robot_id)})
         )
 
     def send_dribble(self, robot_id: int, active: bool) -> None:
-        _ = self.cmd_push.send_string(
-            json.dumps({"type": "dribble", "robot_id": int(robot_id), "active": bool(active)})
+        self.cmd_push.send_string(
+            json.dumps(
+                {"type": "dribble", "robot_id": int(robot_id), "active": bool(active)}
+            )
         )
 
 
 @final
 class TCPBackend:
     def __init__(self):
-        import socket, time
+        import socket
+        import time
+
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         for attempt in range(10):
             try:
@@ -135,6 +134,7 @@ class TCPBackend:
 
     def receive_state(self) -> dict[str, Any] | None:
         import socket
+
         try:
             chunk = self.sock.recv(65536).decode()
             if not chunk:
@@ -142,6 +142,7 @@ class TCPBackend:
             self.buffer += chunk
         except (BlockingIOError, socket.error):
             pass
+
         raw = None
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
@@ -163,283 +164,185 @@ class TCPBackend:
             print("[Strategy node] TCP mode: connection lost")
 
     def send_kick(self, robot_id: int) -> None:
-        pass  # TCP mode has no command channel; kicks only work in ZMQ mode.
+        pass
 
     def send_dribble(self, robot_id: int, active: bool) -> None:
-        pass  # TCP mode has no command channel; dribble only works in ZMQ mode.
+        pass
 
 
-def decide(
-    gamestate: GameState,
-    rl_skill: "RLKickSkill | None" = None,
-    rl_enabled: bool = False,
-    sticky_attackers: dict[str, int] | None = None,
-    kicked_off: bool = True,
-) -> tuple[dict[int, tuple[float, float, float]], list[int], set[int]]:
-    # Placeholder for Decision Tree
-    targets: dict[int, tuple[float, float, float]] = {}
-    kicks: list[int] = []
-    attacker_rids: set[int] = set()
-    sticky = sticky_attackers if sticky_attackers is not None else {}
-    ball = gamestate.ball
+def _assign_roles(gamestate: GameState, color: str) -> dict[str, RobotState]:
+    goal = our_goal(color)
+    robots = list(gamestate.our_team)
 
-    # Goalie ids 0 (blue) and 3 (red) are excluded from strategy: they sit at
-    # spawn so the four forwards can play 2v2 without a goalie wandering out.
-    STATIC_GOALIE_IDS = {0, 3}
+    if not robots:
+        return {}
 
-    for team_color, team in (("blue", gamestate.blue), ("red", gamestate.red)):
-        attacks_right = team_color == "blue"
-        team_dir = 0.0 if attacks_right else math.pi
-        active = [r for r in team if r.id not in STATIC_GOALIE_IDS]
-        sorted_team = sorted(active, key=lambda r: distance(r.pos, ball.pos))
+    attacker = min(robots, key=lambda r: distance(r.pos, gamestate.ball.pos))
+    remaining = [r for r in robots if r.id != attacker.id]
+    roles: dict[str, RobotState] = {"attacker": attacker}
 
-        # Single-robot teams act as the lone goalie: stay on the line from
-        # own goal to the ball at a small standoff. No kick is emitted.
-        if len(sorted_team) == 1:
-            robot = sorted_team[0]
-            tx, ty, ta = _goalie_target(ball.pos, team_color)
-            targets[robot.id] = (tx, ty, ta)
-            sticky.pop(team_color, None)
-            continue
+    if remaining:
+        defender = min(remaining, key=lambda r: distance(r.pos, goal))
+        roles["defender"] = defender
+        remaining = [r for r in remaining if r.id != defender.id]
 
-        # Sticky attacker with hysteresis. The supporter's path runs past the
-        # ball, so per-tick "closest is attacker" flips the role mid-stride and
-        # the wrong robot ends up emitting the kick. Keep the incumbent unless
-        # a teammate is meaningfully closer.
-        last_rid = sticky.get(team_color)
-        incumbent = (
-            next((r for r in sorted_team if r.id == last_rid), None)
-            if last_rid is not None
-            else None
-        )
-        if incumbent is not None and (
-            distance(sorted_team[0].pos, ball.pos) + ATTACKER_HYSTERESIS
-            >= distance(incumbent.pos, ball.pos)
-        ):
-            sorted_team = [incumbent] + [r for r in sorted_team if r.id != incumbent.id]
-        sticky[team_color] = sorted_team[0].id
+    if remaining:
+        roles["supporter"] = remaining[0]
 
-        for i, robot in enumerate(sorted_team):
-            if i == 0:  # attacker
-                attacker_rids.add(robot.id)
-                # Policy was trained with robot west of ball (blue-attacks-right).
-                # Mirror works cleanly only when the attacker is on its own side
-                # of the ball along the attack axis; otherwise the policy drifts
-                # OOD and picks the long way round. Fall back to classic there.
-                if attacks_right:
-                    rl_in_dist = robot.pos[0] < ball.pos[0] - 0.1
-                else:
-                    rl_in_dist = robot.pos[0] > ball.pos[0] + 0.1
-
-                if rl_enabled and rl_skill is not None and rl_in_dist:
-                    # RL: lock to team_dir. Policy was trained with the robot
-                    # at that angle and its action frame assumes it.
-                    tx, ty = rl_skill.target(robot, ball, attacks_right=attacks_right)
-                    targets[robot.id] = (tx, ty, team_dir)
-                else:
-                    # Classic: face the motion direction while navigating so the
-                    # robot doesn't "shift" sideways with its back to the target.
-                    # Once near the approach point, rotate to team_dir to line
-                    # up the kick.
-                    pt = _approach_behind_ball(ball.pos, opp_goal(team_color))
-                    dx, dy = float(pt[0] - robot.pos[0]), float(pt[1] - robot.pos[1])
-                    dist = math.hypot(dx, dy)
-                    ta = team_dir if dist < ATTACKER_ALIGN_DIST else math.atan2(dy, dx)
-                    targets[robot.id] = (float(pt[0]), float(pt[1]), ta)
-                # Possession filter below drops duplicates in the same tick.
-                kicks.append(robot.id)
-            elif i == 1:  # supporter — sits past the ball toward opp goal
-                goal = opp_goal(team_color)
-                to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)
-                # Fixed +y perp so blue/red mirror across midfield instead of
-                # point-mirroring through the ball (which sent red diagonally).
-                perp = np.array([0.0, 1.0])
-                if not kicked_off:
-                    # Pre-kickoff: hold on own side so the two supporters don't
-                    # cross paths and collide while the attackers set up.
-                    pt = ball.pos - to_goal * 1.5 + perp * 1.0
-                else:
-                    pt = ball.pos + to_goal * 1.5 + perp * 1.0
-                targets[robot.id] = (
-                    float(pt[0]), float(pt[1]),
-                    _face_point(robot.pos, ball.pos, team_dir),  # face the ball, not the target
-                )
-            else:  # defender — hangs back toward own goal
-                goal = our_goal(team_color)
-                pt = lerp(goal, ball.pos, 0.3)
-                targets[robot.id] = (
-                    float(pt[0]), float(pt[1]),
-                    _face_point(robot.pos, ball.pos, team_dir),
-                )
-
-    # Possession: only the attacker strictly closer to the ball emits a kick.
-    # Two opposing kicks in the same tick produce equal-opposite impulses
-    # that cancel, leaving the ball pinned between both robots.
-    if len(kicks) > 1:
-        rid_to_bot = {r.id: r for r in gamestate.blue + gamestate.red}
-        closest = min(kicks, key=lambda rid: distance(rid_to_bot[rid].pos, ball.pos))
-        kicks = [closest]
-
-    return targets, kicks, attacker_rids
+    return roles
 
 
-def _ball_in_opp_half_for(team_color: str, ball_x: float) -> bool:
-    # Blue attacks +x (right half); red attacks -x (left half).
-    if team_color == "blue":
-        return ball_x > FIELD_LENGTH / 2.0
-    return ball_x < FIELD_LENGTH / 2.0
+def _tick_team(gamestate: GameState, color: str) -> tuple[dict[int, dict], set[int]]:
+    from BT.attacker_tree import attacker_decide
+    from BT.defender_tree import defender_decide
+    from BT.supporter_tree import supporter_decide
+
+    roles = _assign_roles(gamestate, color)
+    targets: dict[int, dict] = {}
+    attacker_ids: set[int] = set()
+
+    attacker = roles.get("attacker")
+    if attacker is not None:
+        attacker_ids.add(attacker.id)
+        pos, kick, angle, dribble = attacker_decide(attacker, gamestate, color)
+        targets[attacker.id] = {
+            "pos": pos,
+            "kick": kick,
+            "angle": angle,
+            "dribble": dribble,
+        }
+
+    supporter = roles.get("supporter")
+    if supporter is not None:
+        pos, kick = supporter_decide(supporter, gamestate, color)
+        targets[supporter.id] = {
+            "pos": pos,
+            "kick": kick,
+            "angle": None,
+            "dribble": False,
+        }
+
+    defender = roles.get("defender")
+    if defender is not None:
+        pos, kick = defender_decide(defender, gamestate, color)
+        targets[defender.id] = {
+            "pos": pos,
+            "kick": kick,
+            "angle": None,
+            "dribble": False,
+        }
+
+    return targets, attacker_ids
 
 
-def _face_point(
-    pos: np.ndarray, toward: np.ndarray, fallback: float
-) -> float:
-    dx, dy = float(toward[0] - pos[0]), float(toward[1] - pos[1])
-    if math.hypot(dx, dy) < 0.05:
-        return fallback
-    return math.atan2(dy, dx)
+def decide(gamestate: GameState) -> tuple[dict[int, dict], set[int]]:
+    all_targets: dict[int, dict] = {}
+    attacker_ids: set[int] = set()
+
+    for color, our_team, opponents in (
+        ("blue", gamestate.blue, gamestate.red),
+        ("red", gamestate.red, gamestate.blue),
+    ):
+        original_our_team = getattr(gamestate, "our_team", None)
+        original_opponents_team = getattr(gamestate, "opponents_team", None)
+        object.__setattr__(gamestate, "our_team", our_team)
+        object.__setattr__(gamestate, "opponents_team", opponents)
+
+        try:
+            team_targets, team_attackers = _tick_team(gamestate, color)
+            all_targets.update(team_targets)
+            attacker_ids.update(team_attackers)
+        finally:
+            if original_our_team is not None:
+                object.__setattr__(gamestate, "our_team", original_our_team)
+            if original_opponents_team is not None:
+                object.__setattr__(gamestate, "opponents_team", original_opponents_team)
+
+    return all_targets, attacker_ids
 
 
-# Offset, in meters, placed on our side of the ball so body pushes forward.
-APPROACH_OFFSET = 0.3
-# Per-team lateral offset breaks the symmetry when both attackers contest the ball.
-APPROACH_LATERAL = 0.2
-# Within this distance of the approach point, the attacker rotates to the kick
-# direction. Farther away, it faces the motion direction for natural driving.
-ATTACKER_ALIGN_DIST = 0.6
-# Incumbent attacker keeps the role unless a teammate is at least this much
-# closer to the ball. Bigger than typical per-tick noise and the supporter's
-# transient pass-by distance.
-ATTACKER_HYSTERESIS = 0.4
-
-
-# Goalie sits this far in front of the goal line, on the line from own
-# goal center to the ball. Small enough that the goalie covers the mouth.
-GOALIE_STANDOFF = 0.4
-# Keep the goalie a hair inside the posts so it never wedges against a wall.
-GOALIE_Y_MARGIN = 0.05
-
-
-def _goalie_target(
-    ball_pos: np.ndarray, team_color: str
-) -> tuple[float, float, float]:
-    goal = our_goal(team_color)
-    to_ball = ball_pos - goal
-    n = float(np.linalg.norm(to_ball))
-    if n < 1e-6:
-        tx, ty = float(goal[0]), float(goal[1])
-    else:
-        pt = goal + (to_ball / n) * GOALIE_STANDOFF
-        tx, ty = float(pt[0]), float(pt[1])
-
-    ty = float(np.clip(ty, GOAL_Y_MIN + GOALIE_Y_MARGIN, GOAL_Y_MAX - GOALIE_Y_MARGIN))
-
-    dx, dy = float(ball_pos[0] - tx), float(ball_pos[1] - ty)
-    angle = math.atan2(dy, dx) if math.hypot(dx, dy) > 0.05 else (
-        0.0 if team_color == "blue" else math.pi
-    )
-    return tx, ty, angle
-
-
-def _approach_behind_ball(
-    ball_pos: np.ndarray, opp_goal_pos: np.ndarray
-) -> np.ndarray:
-    to_goal = opp_goal_pos - ball_pos
-    n = np.linalg.norm(to_goal)
-    if n < 1e-6:
-        return ball_pos
-    dir_goal = to_goal / n
-    # Both attackers approach from the south so the kickoff layout is mirror-
-    # symmetric across midfield. Still breaks the standoff because the two
-    # attackers end up offset in x.
-    return ball_pos - dir_goal * APPROACH_OFFSET + np.array([0.0, -APPROACH_LATERAL])
+def _pos_to_xy(pos: np.ndarray) -> tuple[float, float]:
+    return float(pos[0]), float(pos[1])
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Strategy node for the RoboCup game")
-    _ = parser.add_argument(
+    parser.add_argument(
         "--mode", choices=["tcp", "zmq"], default="zmq", help="Mode: tcp or zmq"
     )
-    _ = parser.add_argument(
+    parser.add_argument(
         "--color",
         choices=["blue", "red"],
         default="blue",
         help="Team color: blue or red",
     )
-    _ = parser.add_argument(
+    parser.add_argument(
         "--rl-checkpoint",
         type=str,
         default=DEFAULT_RL_CHECKPOINT,
-        help="Path to the trained PPO kick checkpoint. Loaded lazily on first toggle-on.",
+        help="Path to the trained PPO kick checkpoint.",
     )
     args = parser.parse_args()
 
-    global our_color
+    global our_color, _rl_tree_loaded
     our_color = args.color
 
-    if args.mode == "zmq":
-        backend = ZMQBackend(color=OUR_COLOR)
-    else:
-        backend = TCPBackend()
+    backend = ZMQBackend(our_color) if args.mode == "zmq" else TCPBackend()
 
     print(f"[Strategy node] {args.mode} mode: started")
-    print(f"[Strategy node] controlling BOTH teams (blue attacks right, red attacks left)")
+    print("[Strategy node] controlling BOTH teams through BT role trees")
 
-    rl_skill = None
     rl_enabled = False
-    dribble_attacker_enabled = False
-    sticky_attackers: dict[str, int] = {}
-    # Flips True once the ball has been kicked/pushed. Before that, supporters
-    # hold on their own half so they don't barrel into each other at midfield.
-    kicked_off = False
-    KICKOFF_BALL_SPEED = 0.1
-
     frame = 0
+
     while True:
         raw = backend.receive_state()
         if raw is None:
             continue
 
-        # Handle manual-port control messages (RL toggle from viz).
         for msg in backend.drain_manual():
             if "rl_kick_enabled" in msg:
                 want = bool(msg["rl_kick_enabled"])
-                if want and rl_skill is None:
-                    rl_skill = _try_load_skill(args.rl_checkpoint)
-                rl_enabled = want and rl_skill is not None
+                if want and not _rl_tree_loaded:
+                    _rl_tree_loaded = load_rl_skill(args.rl_checkpoint)
+                    if not _rl_tree_loaded and _ckpts:
+                        _rl_tree_loaded = load_rl_skill(_ckpts[-1])
+                rl_enabled = want and _rl_tree_loaded
+                set_rl_enabled(rl_enabled)
                 print(f"[Strategy node] RL kick → {'ON' if rl_enabled else 'OFF'}")
-            if "dribble_attacker" in msg:
-                dribble_attacker_enabled = bool(msg["dribble_attacker"])
-                print(f"[Strategy node] Dribble (attacker) → {'ON' if dribble_attacker_enabled else 'OFF'}")
 
         try:
             gamestate = build_game_state(raw, our_color)
-            if not kicked_off and gamestate.ball.speed > KICKOFF_BALL_SPEED:
-                kicked_off = True
-                print("[Strategy node] kickoff")
-            targets, kicks, attacker_rids = decide(
-                gamestate, rl_skill, rl_enabled, sticky_attackers, kicked_off
-            )
-            backend.send_targets({
-                "targets": {
-                    str(rid): {"x": tx, "y": ty, "angle": ta}
-                    for rid, (tx, ty, ta) in targets.items()
-                },
-                "attackers": sorted(attacker_rids),
-            })
-            for rid in kicks:
-                backend.send_kick(rid)
+            targets, attacker_ids = decide(gamestate)
 
-            # Route dribble to our team's attacker (closest to ball); everyone
-            # else gets OFF so stale state never leaks between attacker changes.
-            our_team = gamestate.blue if our_color == "blue" else gamestate.red
-            if our_team:
-                attacker_rid = min(our_team, key=lambda r: distance(r.pos, gamestate.ball.pos)).id
-                for r in our_team:
-                    backend.send_dribble(r.id, dribble_attacker_enabled and r.id == attacker_rid)
+            backend.send_targets(
+                {
+                    "targets": {
+                        str(rid): {
+                            "x": _pos_to_xy(cmd["pos"])[0],
+                            "y": _pos_to_xy(cmd["pos"])[1],
+                            "angle": cmd["angle"],
+                        }
+                        for rid, cmd in targets.items()
+                    },
+                    "attackers": sorted(attacker_ids),
+                }
+            )
+
+            for rid, cmd in targets.items():
+                if cmd.get("kick", False):
+                    backend.send_kick(rid)
+
+            for robot in gamestate.blue + gamestate.red:
+                cmd = targets.get(robot.id)
+                backend.send_dribble(
+                    robot.id,
+                    bool(cmd is not None and cmd.get("dribble", False)),
+                )
         except Exception as e:
-            import traceback
             print(f"[ERROR] {e}")
             import traceback
+
             traceback.print_exc()
             continue
 
@@ -450,20 +353,6 @@ def main() -> None:
                 + f"rl_kick={'ON' if rl_enabled else 'OFF'}  "
                 + f"ball=({gamestate.ball.pos[0]:.1f}, {gamestate.ball.pos[1]:.1f})"
             )
-
-
-def _try_load_skill(path: str):
-    if not os.path.exists(path):
-        print(f"[Strategy node] RL checkpoint not found: {path}")
-        return None
-    try:
-        from decision_making.skills.rl_kick import RLKickSkill
-        skill = RLKickSkill(path)
-        print(f"[Strategy node] loaded RL kick from {path}")
-        return skill
-    except Exception as e:
-        print(f"[Strategy node] failed to load RL kick: {e}")
-        return None
 
 
 if __name__ == "__main__":

@@ -41,8 +41,6 @@ from config import (  # noqa: E402
     TEAM_BLUE_SIZE,
     VISION_PORT,
     WHEEL_ANGLES,
-    GOAL_DEPTH, 
-    GOAL_WIDTH
 )
 
 # ── Palette ───────────────────────────────────────────────────────────────────
@@ -533,6 +531,8 @@ def draw_winner_screen(
 def _apply_deadzone(v: float, dz: float) -> float:
     return 0.0 if abs(v) < dz else v
 
+
+
 def main() -> None:
     _ = pygame.init()
     pygame.joystick.init()
@@ -581,7 +581,6 @@ def main() -> None:
     confetti_particles: list[dict[str, Any]] = []
 
     mode_idx = 0
-    selected_robot = 0
     prev_mode_idx = 0
     strategy_enabled = False
     rl_kick_enabled = False
@@ -641,9 +640,6 @@ def main() -> None:
                         _ = manual_pub.send_string(json.dumps(
                             {"direct": {"3": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
                         ))
-                elif event.key == pygame.K_TAB: #change the selected manual robot
-                    selected_robot = (selected_robot + 1) % 3
-                    print(f"[VizNode] Selected robot → {selected_robot}")
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if MODES[mode_idx] != "MANUAL":
@@ -652,13 +648,13 @@ def main() -> None:
                         wx, wy = s2w(mx, my)
                         mode = MODES[mode_idx]
                         # Snapshot robot position as path start
-                        if world_state and str(selected_robot) in world_state.get("robots", {}):
-                            r = world_state["robots"][str(selected_robot)]
+                        if world_state and "0" in world_state.get("robots", {}):
+                            r = world_state["robots"]["0"]
                             path_start = (r["x"], r["y"])
                         else:
                             path_start = None
                         target_pin = (wx, wy)
-                        manual_pub.send_string(
+                        _ = manual_pub.send_string(
                             json.dumps({"targets": {"0": {"x": wx, "y": wy, "mode": mode}}})
                         )
                         print(f"[VizNode] Target → ({wx:.2f}, {wy:.2f})  [{mode}]")
@@ -743,7 +739,7 @@ def main() -> None:
 
         # Auto-clear overlay when robot arrives
         if target_pin and world_state:
-            r = world_state["robots"].get(str(selected_robot))
+            r = world_state["robots"].get("0")
             if r:
                 dist = math.hypot(r["x"] - target_pin[0], r["y"] - target_pin[1])
                 if dist < ARRIVAL_THRESH:
@@ -752,7 +748,6 @@ def main() -> None:
 
         # ── Draw ──────────────────────────────────────────────────────────────
         draw_field(screen)
-        draw_goals(screen)
 
         # Dotted path + pin (drawn before robot so robot renders on top)
         if target_pin:

@@ -180,6 +180,7 @@ class RobotController:
         self.target_angle: float | None = None
         self.path_length: float = 0.0
         self.total_time: float = 0.0
+        self.kick_requested = False
         self._last_pos: np.ndarray | None = None
         # MANUAL mode: world-frame (vx, vy, omega) received directly from operator
         self.direct_vel: tuple[float, float, float] | None = None
@@ -197,7 +198,7 @@ class RobotController:
         self.total_time = 0.0
         self._last_pos = None
         self.direct_vel = None
-        self.kick_requested = kick
+        self.kick_requested = False
         if mode:
             self.mode = mode
 
@@ -278,11 +279,6 @@ def main() -> None:
     strategy_sub.setsockopt_string(zmq.SUBSCRIBE, "")
     strategy_sub.setsockopt(zmq.RCVTIMEO, 0)
 
-    strategy_sub_red = ctx.socket(zmq.SUB)
-    strategy_sub_red.connect(f"tcp://localhost:{STRATEGY_PORT_RED}")
-    strategy_sub_red.setsockopt_string(zmq.SUBSCRIBE, "")
-    strategy_sub_red.setsockopt(zmq.RCVTIMEO, 0)
-
     cmd_push = ctx.socket(zmq.PUSH)
     _ = cmd_push.connect(f"tcp://localhost:{COMMAND_PORT}")
 
@@ -296,7 +292,6 @@ def main() -> None:
         # Drain strategy targets first (non-blocking), only if enabled
         if strategy_enabled:
             _drain_targets(strategy_sub, robots, zmq)
-            _drain_targets(strategy_sub_red, robots, zmq)
         else:
             # Still drain the socket so messages don't pile up
             while True:

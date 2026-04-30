@@ -6,7 +6,6 @@ import numpy as np
 from geometry import distance, our_goal
 from state import GameState, RobotState
 
-
 def _assign_roles(gamestate: GameState, color: str) -> dict[str, RobotState]:
     goal = our_goal(color)
     robots = gamestate.our_team
