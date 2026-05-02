@@ -82,6 +82,9 @@ JOYSTICK_DEADZONE = 0.10
 JS_AXIS_LX, JS_AXIS_LY, JS_AXIS_RX = 0, 1, 2
 
 HUD_H = 26
+# Top header band carries the timer and half label without overlapping the
+# field. Field is drawn between y=HEADER_H and y=HEADER_H+DISPLAY_H.
+HEADER_H = 22
 
 # Goal geometry (GOAL_Y_MIN / GOAL_Y_MAX) is imported from config.py.
 
@@ -123,14 +126,15 @@ PIXEL_GLYPHS = {
 
 
 def w2s(x: float, y: float) -> tuple[int, int]:
-    """World metres (y-up) → screen pixels (y-down)."""
-    return int(x * DISPLAY_SCALE), int(DISPLAY_H - y * DISPLAY_SCALE)
+    """World metres (y-up) → screen pixels (y-down). Field is drawn below
+    the header band, so screen-y starts at HEADER_H."""
+    return int(x * DISPLAY_SCALE), int(HEADER_H + DISPLAY_H - y * DISPLAY_SCALE)
 
 
 def s2w(px: int, py: int) -> tuple[float, float]:
     """Screen pixels → world metres (clamped to field)."""
     wx = max(0.0, min(FIELD_W, px / DISPLAY_SCALE))
-    wy = max(0.0, min(FIELD_H, (DISPLAY_H - py) / DISPLAY_SCALE))
+    wy = max(0.0, min(FIELD_H, (HEADER_H + DISPLAY_H - py) / DISPLAY_SCALE))
     return wx, wy
 
 
@@ -139,10 +143,12 @@ def s2w(px: int, py: int) -> tuple[float, float]:
 
 def draw_field(surf: pygame.Surface) -> None:
     _ = surf.fill(C_FIELD)
-    _ = pygame.draw.rect(surf, C_LINE, (0, 0, DISPLAY_W, DISPLAY_H), 3)
-    _ = pygame.draw.line(surf, C_LINE, (DISPLAY_W // 2, 0), (DISPLAY_W // 2, DISPLAY_H), 2)
+    _ = pygame.draw.rect(surf, C_LINE, (0, HEADER_H, DISPLAY_W, DISPLAY_H), 3)
+    _ = pygame.draw.line(
+        surf, C_LINE, (DISPLAY_W // 2, HEADER_H), (DISPLAY_W // 2, HEADER_H + DISPLAY_H), 2
+    )
     _ = pygame.draw.circle(
-        surf, C_LINE, (DISPLAY_W // 2, DISPLAY_H // 2), int(0.5 * DISPLAY_SCALE), 2
+        surf, C_LINE, (DISPLAY_W // 2, HEADER_H + DISPLAY_H // 2), int(0.5 * DISPLAY_SCALE), 2
     )
 
     # Goal-post markers overlaid at the side edges.
@@ -250,7 +256,7 @@ def draw_hud(
     rl_kick_on: bool = False,
 ) -> None:
     """Bottom status bar — mode selector blocks + centered score + strategy toggle."""
-    y0 = DISPLAY_H
+    y0 = HEADER_H + DISPLAY_H
     pad = 5
     _ = pygame.draw.rect(surf, C_HUD_BG, (0, y0, DISPLAY_W, HUD_H))
 
@@ -406,7 +412,7 @@ def _update_confetti(particles: list[dict[str, Any]], dt: float) -> None:
 
 def draw_confetti(surf: pygame.Surface, particles: list[dict[str, Any]]) -> None:
     for p in particles:
-        if p["x"] < 0 or p["x"] >= DISPLAY_W or p["y"] < 0 or p["y"] >= DISPLAY_H:
+        if p["x"] < 0 or p["x"] >= DISPLAY_W or p["y"] < HEADER_H or p["y"] >= HEADER_H + DISPLAY_H:
             continue
         scale = max(0.35, p["life"] / p["max_life"])
         radius = max(1, int(p["size"] * scale))
@@ -542,7 +548,7 @@ def main() -> None:
         joystick.init()
         print(f"[VizNode] Gamepad detected: {joystick.get_name()}")
 
-    screen = pygame.display.set_mode((DISPLAY_W, DISPLAY_H + HUD_H))
+    screen = pygame.display.set_mode((DISPLAY_W, HEADER_H + DISPLAY_H + HUD_H))
     pygame.display.set_caption(
         "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: MANUAL (WASD+QE / gamepad)  |  5: Strategy  |  R: RL Kick  |  Enter: Kick  |  9: Toggle Ball Stuck Reset | 0: Toggle Dribble"
     )
@@ -644,7 +650,7 @@ def main() -> None:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if MODES[mode_idx] != "MANUAL":
                     mx, my = event.pos
-                    if my < DISPLAY_H:  # ignore clicks on HUD
+                    if HEADER_H <= my < HEADER_H + DISPLAY_H:  # ignore header + HUD
                         wx, wy = s2w(mx, my)
                         mode = MODES[mode_idx]
                         # Snapshot robot position as path start

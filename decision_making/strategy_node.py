@@ -181,24 +181,23 @@ def decide(
     sticky = sticky_attackers if sticky_attackers is not None else {}
     ball = gamestate.ball
 
-    # Goalie ids 0 (blue) and 3 (red) are excluded from strategy: they sit at
-    # spawn so the four forwards can play 2v2 without a goalie wandering out.
-    STATIC_GOALIE_IDS = {0, 3}
-
     for team_color, team in (("blue", gamestate.blue), ("red", gamestate.red)):
         attacks_right = team_color == "blue"
         team_dir = 0.0 if attacks_right else math.pi
-        active = [r for r in team if r.id not in STATIC_GOALIE_IDS]
-        sorted_team = sorted(active, key=lambda r: distance(r.pos, ball.pos))
 
         # Single-robot teams act as the lone goalie: stay on the line from
         # own goal to the ball at a small standoff. No kick is emitted.
-        if len(sorted_team) == 1:
-            robot = sorted_team[0]
+        if len(team) == 1:
+            robot = team[0]
             tx, ty, ta = _goalie_target(ball.pos, team_color)
             targets[robot.id] = (tx, ty, ta)
             sticky.pop(team_color, None)
             continue
+
+        # Roles purely by distance to ball: closest = attacker, middle =
+        # supporter, furthest = defender. Sticky hysteresis keeps the
+        # attacker stable while the supporter's path runs past the ball.
+        sorted_team = sorted(team, key=lambda r: distance(r.pos, ball.pos))
 
         # Sticky attacker with hysteresis. The supporter's path runs past the
         # ball, so per-tick "closest is attacker" flips the role mid-stride and
@@ -229,7 +228,24 @@ def decide(
                 else:
                     rl_in_dist = robot.pos[0] > ball.pos[0] + 0.1
 
-                if rl_enabled and rl_skill is not None and rl_in_dist:
+                opp_team_list = gamestate.red if team_color == "blue" else gamestate.blue
+                opp_min = min(
+                    (distance(o.pos, ball.pos) for o in opp_team_list),
+                    default=float("inf"),
+                )
+                contested = (
+                    opp_min < CONTESTED_OPP_DIST and ball.speed < CONTESTED_BALL_SPEED
+                )
+
+                if contested:
+                    # Skew the kick off the goal axis so the two attackers no
+                    # longer pin the ball head-on. Whichever fires first sends
+                    # the ball off its own diagonal and out of the standoff.
+                    kick_angle = team_dir + CONTESTED_SKEW
+                    kick_dir = np.array([math.cos(kick_angle), math.sin(kick_angle)])
+                    pt = ball.pos - kick_dir * APPROACH_OFFSET
+                    targets[robot.id] = (float(pt[0]), float(pt[1]), kick_angle)
+                elif rl_enabled and rl_skill is not None and rl_in_dist:
                     # RL: lock to team_dir. Policy was trained with the robot
                     # at that angle and its action frame assumes it.
                     tx, ty = rl_skill.target(robot, ball, attacks_right=attacks_right)
@@ -239,7 +255,7 @@ def decide(
                     # robot doesn't "shift" sideways with its back to the target.
                     # Once near the approach point, rotate to team_dir to line
                     # up the kick.
-                    pt = _approach_behind_ball(ball.pos, opp_goal(team_color))
+                    pt = _approach_behind_ball(ball.pos, opp_goal(team_color), team_color)
                     dx, dy = float(pt[0] - robot.pos[0]), float(pt[1] - robot.pos[1])
                     dist = math.hypot(dx, dy)
                     ta = team_dir if dist < ATTACKER_ALIGN_DIST else math.atan2(dy, dx)
@@ -262,13 +278,9 @@ def decide(
                     float(pt[0]), float(pt[1]),
                     _face_point(robot.pos, ball.pos, team_dir),  # face the ball, not the target
                 )
-            else:  # defender — hangs back toward own goal
-                goal = our_goal(team_color)
-                pt = lerp(goal, ball.pos, 0.3)
-                targets[robot.id] = (
-                    float(pt[0]), float(pt[1]),
-                    _face_point(robot.pos, ball.pos, team_dir),
-                )
+            else:  # defender — plays goalie on the goal-to-ball line
+                tx, ty, ta = _goalie_target(ball.pos, team_color)
+                targets[robot.id] = (tx, ty, ta)
 
     # Possession: only the attacker strictly closer to the ball emits a kick.
     # Two opposing kicks in the same tick produce equal-opposite impulses
@@ -298,9 +310,15 @@ def _face_point(
 
 
 # Offset, in meters, placed on our side of the ball so body pushes forward.
-APPROACH_OFFSET = 0.3
-# Per-team lateral offset breaks the symmetry when both attackers contest the ball.
-APPROACH_LATERAL = 0.2
+# Must keep the ball inside the kick zone (ROBOT_RADIUS … ROBOT_RADIUS+
+# KICK_ZONE_DEPTH ≈ 0.143 … 0.263) once the attacker arrives, otherwise the
+# kick never fires. 0.25 lands the ball cleanly inside that band.
+APPROACH_OFFSET = 0.25
+# Per-team y bias on the approach point so the two attackers don't converge
+# head-on at the same point and pin the ball. Must stay below
+# KICK_ZONE_HALF_WIDTH (0.10) plus ARRIVAL_THRESH (~0.04) so the ball is still
+# inside the kick zone once the attacker stops at the approach point.
+APPROACH_LATERAL = 0.05
 # Within this distance of the approach point, the attacker rotates to the kick
 # direction. Farther away, it faces the motion direction for natural driving.
 ATTACKER_ALIGN_DIST = 0.6
@@ -308,11 +326,26 @@ ATTACKER_ALIGN_DIST = 0.6
 # closer to the ball. Bigger than typical per-tick noise and the supporter's
 # transient pass-by distance.
 ATTACKER_HYSTERESIS = 0.4
+# Contested-ball detection: an opposing forward this close to a stalled ball
+# means we're in a head-on push stalemate. The attacker switches to a skewed
+# approach to break it.
+CONTESTED_OPP_DIST = 0.5
+CONTESTED_BALL_SPEED = 0.5
+# Kick-angle skew applied when contested. Both teams skew by the same sign,
+# so since team_dir differs by π the absolute kick directions diverge by
+# 2·SKEW — the two attackers end up on different diagonals around the ball
+# instead of pinning head-on along the goal-to-goal axis.
+CONTESTED_SKEW = math.pi / 6
 
 
-# Goalie sits this far in front of the goal line, on the line from own
-# goal center to the ball. Small enough that the goalie covers the mouth.
-GOALIE_STANDOFF = 0.4
+# Goalie's resting standoff in front of the goal. Bigger than the pure
+# mouth-coverage value so lateral tracking has meaningful range when the
+# ball is wide.
+GOALIE_STANDOFF = 0.8
+# Once the ball is within RUSH_DIST of own goal, scale the standoff up
+# toward RUSH_STANDOFF so the goalie commits forward to challenge.
+GOALIE_RUSH_DIST = 2.5
+GOALIE_RUSH_STANDOFF = 1.6
 # Keep the goalie a hair inside the posts so it never wedges against a wall.
 GOALIE_Y_MARGIN = 0.05
 
@@ -326,7 +359,12 @@ def _goalie_target(
     if n < 1e-6:
         tx, ty = float(goal[0]), float(goal[1])
     else:
-        pt = goal + (to_ball / n) * GOALIE_STANDOFF
+        if n < GOALIE_RUSH_DIST:
+            t = 1.0 - n / GOALIE_RUSH_DIST
+            standoff = GOALIE_STANDOFF + (GOALIE_RUSH_STANDOFF - GOALIE_STANDOFF) * t
+        else:
+            standoff = GOALIE_STANDOFF
+        pt = goal + (to_ball / n) * standoff
         tx, ty = float(pt[0]), float(pt[1])
 
     ty = float(np.clip(ty, GOAL_Y_MIN + GOALIE_Y_MARGIN, GOAL_Y_MAX - GOALIE_Y_MARGIN))
@@ -339,17 +377,18 @@ def _goalie_target(
 
 
 def _approach_behind_ball(
-    ball_pos: np.ndarray, opp_goal_pos: np.ndarray
+    ball_pos: np.ndarray, opp_goal_pos: np.ndarray, team_color: str
 ) -> np.ndarray:
     to_goal = opp_goal_pos - ball_pos
     n = np.linalg.norm(to_goal)
     if n < 1e-6:
         return ball_pos
     dir_goal = to_goal / n
-    # Both attackers approach from the south so the kickoff layout is mirror-
-    # symmetric across midfield. Still breaks the standoff because the two
-    # attackers end up offset in x.
-    return ball_pos - dir_goal * APPROACH_OFFSET + np.array([0.0, -APPROACH_LATERAL])
+    # Blue from -y, red from +y so the two attackers don't pin head-on at the
+    # ball when they meet. Stays inside KICK_ZONE_HALF_WIDTH so the kick still
+    # fires once the robot settles.
+    lateral_y = -APPROACH_LATERAL if team_color == "blue" else APPROACH_LATERAL
+    return ball_pos - dir_goal * APPROACH_OFFSET + np.array([0.0, lateral_y])
 
 
 def main() -> None:

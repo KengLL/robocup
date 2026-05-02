@@ -23,7 +23,9 @@ import numpy as np
 import zmq
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, _HERE)  # keep local python/config.py ahead of any similarly named module
+sys.path.insert(
+    0, _HERE
+)  # keep local python/config.py ahead of any similarly named module
 
 from config import (  # noqa: E402
     ARRIVAL_THRESH,
@@ -234,11 +236,6 @@ class RobotController:
 
         if dist < ARRIVAL_THRESH:
             avg = self.path_length / self.total_time if self.total_time > 0 else 0.0
-            print(
-                f"[Robot {self.id}] Arrived  mode={self.mode}  "
-                + f"path={self.path_length:.2f}m  time={self.total_time:.2f}s  "
-                + f"avg_speed={avg:.2f} m/s"
-            )
             self.target = None
             return [0.0, 0.0, 0.0]
 
@@ -328,7 +325,7 @@ def main() -> None:
 
                 if data.get("type") == "ball_stuck_toggle":
                     _ = cmd_push.send_string(json.dumps({"type": "ball_stuck_toggle"}))
-                    
+
                 for rid_str in data.get("kick", {}):
                     i = int(rid_str)
                     if 0 <= i < NUM_ROBOTS:
