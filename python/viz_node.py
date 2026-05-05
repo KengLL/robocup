@@ -118,7 +118,9 @@ PIXEL_GLYPHS = {
     "N": ["101", "111", "111", "111", "101"],
     "F": ["111", "100", "111", "100", "100"],
     "G": ["111", "100", "101", "101", "111"],
-    "K": ["101", "101", "110", "101", "101"]
+    "K": ["101", "101", "110", "101", "101"],
+    "Y": ["101", "101", "010", "010", "010"],
+    "B": ["110", "101", "110", "101", "110"]
 }
 
 
@@ -532,6 +534,77 @@ def draw_winner_screen(
     subx = (DISPLAY_W - total_w) // 2
     draw_pixel_text(surf, sub, subx, DISPLAY_H // 2 + 90, (160, 160, 160), pixel=pixel, spacing=1)
 
+def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
+    """Full screen controls overlay shown at startup."""
+    overlay = pygame.Surface((DISPLAY_W, HEADER_H + DISPLAY_H + HUD_H), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 230))
+    surf.blit(overlay, (0, 0))
+
+    # Title
+    title = "CONTROLS"
+    pixel = 8
+    char_step = (3 * pixel) + 1 + pixel
+    total_w = len(title) * char_step - pixel
+    draw_pixel_text(surf, title, (DISPLAY_W - total_w) // 2, 30, (255, 215, 0), pixel=pixel, spacing=1)
+
+    # Controls list
+    controls = [
+        ("1 2 3",    "PD / TIME-OPTIMAL / MPC controller"),
+        ("4",        "MANUAL mode  (WASD to move  QE to rotate)"),
+        ("5",        "Toggle autonomous strategy AI"),
+        ("R",        "Toggle RL kick policy"),
+        ("0",        "Toggle dribbler"),
+        ("9",        "Toggle ball-stuck auto-reset"),
+        ("CLICK",    "Send robot 0 to clicked position"),
+        ("MOUSE",    "Click field while in PD/TIME/MPC mode"),
+    ]
+
+    game_rules = [
+        ("HALVES",   "2 x 300 seconds"),
+        ("OVERTIME", "If scores equal after 90 min"),
+        ("10 GOALS", "Game ends on 10-goal lead"),
+        ("SCORING",  "Ball must enter goal mouth"),
+    ]
+
+    # Draw two columns
+    col_x = [40, DISPLAY_W // 2 + 20]
+    headers = ["KEYBOARD", "GAME RULES"]
+    datasets = [controls, game_rules]
+
+    for col, (header, data) in enumerate(zip(headers, datasets)):
+        hx = col_x[col]
+        hy = 80
+        # section header
+        pixel = 3
+        draw_pixel_text(surf, header, hx, hy, (100, 200, 255), pixel=pixel, spacing=1)
+
+        # use pygame font for the description text — pixel glyphs don't have lowercase
+        font_small = pygame.font.SysFont("monospace", 13)
+        font_key   = pygame.font.SysFont("monospace", 13, bold=True)
+
+        y = hy + 22
+        for key, desc in data:
+            key_surf = font_key.render(f"[{key}]", True, (255, 215, 0))
+            desc_surf = font_small.render(desc, True, (200, 200, 200))
+            surf.blit(key_surf,  (hx, y))
+            surf.blit(desc_surf, (hx + key_surf.get_width() + 8, y))
+            y += 22
+
+    # X close button
+    pygame.draw.rect(surf, (180, 40, 40), close_rect, border_radius=6)
+    pygame.draw.rect(surf, (255, 255, 255), close_rect, 2, border_radius=6)
+    font_x = pygame.font.SysFont("monospace", 18, bold=True)
+    x_surf = font_x.render("X  CLOSE", True, (255, 255, 255))
+    surf.blit(x_surf, (
+        close_rect.x + (close_rect.width  - x_surf.get_width())  // 2,
+        close_rect.y + (close_rect.height - x_surf.get_height()) // 2,
+    ))
+
+    # small hint at bottom
+    font_hint = pygame.font.SysFont("monospace", 11)
+    hint = font_hint.render("press any key or click X to dismiss", True, (120, 120, 120))
+    surf.blit(hint, ((DISPLAY_W - hint.get_width()) // 2, HEADER_H + DISPLAY_H + HUD_H - 20))
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def _apply_deadzone(v: float, dz: float) -> float:
@@ -611,6 +684,9 @@ def main() -> None:
     ball_stuck_popup_until = 0.0
     last_ball_stuck_seq = -1
 
+    show_controls = True
+    controls_close_rect = pygame.Rect(DISPLAY_W // 2 - 80, HEADER_H + DISPLAY_H - 60, 160, 40)
+
     # Overlay state: cleared on arrival
     target_pin: tuple[float, float] | None = None
     path_start: tuple[float, float] | None = None
@@ -626,6 +702,13 @@ def main() -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            if show_controls:
+                if event.type == pygame.KEYDOWN:
+                    show_controls = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if controls_close_rect.collidepoint(event.pos):
+                        show_controls = False
+                continue  # block all other input while screen is up
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_5:
@@ -849,6 +932,8 @@ def main() -> None:
         if game_winner is not None:
             SND_WINNER.play()
             draw_winner_screen(screen, game_winner, score_blue, score_red)
+        if show_controls:
+            draw_controls_screen(screen, controls_close_rect)
         pygame.display.flip()
         _ = clock.tick(FPS)
 
