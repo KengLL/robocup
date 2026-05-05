@@ -495,7 +495,7 @@ def draw_winner_screen(
     """Full screen winner display shown at game end."""
     # dark overlay
     overlay = pygame.Surface((DISPLAY_W, DISPLAY_H), pygame.SRCALPHA)
-    _ = overlay.fill((0, 0, 0, 210))
+    _ = overlay.fill((0, 0, 0, 220))
     _ = surf.blit(overlay, (0, 0))
 
     if winner == "blue":
@@ -541,6 +541,9 @@ def _apply_deadzone(v: float, dz: float) -> float:
 
 def main() -> None:
     _ = pygame.init()
+    pygame.mixer.init()
+
+
     pygame.joystick.init()
     joystick = None
     if pygame.joystick.get_count() > 0:
@@ -553,6 +556,18 @@ def main() -> None:
         "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: MANUAL (WASD+QE / gamepad)  |  5: Strategy  |  R: RL Kick  |  Enter: Kick  |  9: Toggle Ball Stuck Reset | 0: Toggle Dribble"
     )
     clock = pygame.time.Clock()
+
+    # ── Sounds ─────────────────────────────
+    SND_GOAL = pygame.mixer.Sound("sounds/goal.wav")
+    SND_CHEER = pygame.mixer.Sound("sounds/cheer.wav")
+    SND_WHISTLE = pygame.mixer.Sound("sounds/whistle.wav")
+    SND_WINNER = pygame.mixer.Sound("sounds/winner.wav")
+    SND_COUNTDOWN = pygame.mixer.Sound("sounds/countdown.wav")
+
+    # volume tuning
+    SND_GOAL.set_volume(0.2)
+    SND_CHEER.set_volume(0.6)
+    SND_WHISTLE.set_volume(0.7)
 
     ctx = zmq.Context()
 
@@ -580,6 +595,7 @@ def main() -> None:
     phase_popup_until = 0.0
     last_phase_seen = "FIRST HALF"
     game_winner = None  # "blue", "red", "draw", or None
+    last_countdown_second = None
     last_goal_seq_seen = -1
     goal_flash_team = "blue"
     goal_flash_until = 0.0
@@ -712,6 +728,25 @@ def main() -> None:
             score_red = int(score.get("red", score_red))
             game_info = world_state.get("game", None)
             if game_info is not None:
+
+                time_remaining = game_info.get("time_remaining", 300)
+                half_over = game_info.get("half_over", False)
+
+                # countdown beeps for last 10 seconds
+                if not half_over and time_remaining <= 10.0:
+                    current_second = int(time_remaining)
+                    if current_second != last_countdown_second and current_second >= 0:
+                        last_countdown_second = current_second
+                        if current_second > 0:
+                            SND_COUNTDOWN.play()
+                        else:
+                            # zero — play whistle
+                            SND_WHISTLE.play()
+
+                # reset countdown tracker when a new half starts
+                if time_remaining > 10.0:
+                    last_countdown_second = None
+
                 new_phase = game_info.get("phase", "FIRST HALF")
                 if new_phase != last_phase_seen:
                     last_phase_seen = new_phase
@@ -729,6 +764,8 @@ def main() -> None:
             if isinstance(last_goal, dict):
                 seq = int(last_goal.get("seq", -1))
                 if seq > last_goal_seq_seen:
+                    SND_GOAL.play()
+                    SND_CHEER.play()
                     last_goal_seq_seen = seq
                     scored_post_team = str(last_goal.get("team", "blue"))
                     # Reverse effect color relative to post scored on:
@@ -810,6 +847,7 @@ def main() -> None:
         if stuck_remaining > 0.0:
             draw_phase_popup(screen, "GAMESTUCK", stuck_remaining)
         if game_winner is not None:
+            SND_WINNER.play()
             draw_winner_screen(screen, game_winner, score_blue, score_red)
         pygame.display.flip()
         _ = clock.tick(FPS)
