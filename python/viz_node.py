@@ -53,20 +53,22 @@ C_HUD_BG = (30, 30, 30)
 C_GOAL_LEFT = (0, 255, 255)
 C_GOAL_RIGHT = (255, 110, 110)
 
-MODES = ["2005_INVERSION", "2005_TIME_OPTIMAL", "MPC", "MANUAL"]
+MODES = ["2005_INVERSION", "2005_TIME_OPTIMAL", "MPC", "MANUAL", "CONTROLLER"]
 MODE_COLORS = {
     "2005_INVERSION": (0, 255, 128),
     "MPC": (0, 200, 255),
     "2005_TIME_OPTIMAL": (220, 80, 255),
     "MANUAL": (255, 165, 0),
+    "CONTROLLER": (255, 105, 180),
 }
-MODE_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3}
+MODE_KEYS = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2, pygame.K_4: 3, pygame.K_6: 4}
 
 HUD_MODE_LABELS = {
     "2005_INVERSION": "PD",
     "2005_TIME_OPTIMAL": "TIME",
     "MPC": "MPC",
-    "MANUAL": "CTL",
+    "MANUAL": "WASD",
+    "CONTROLLER": "PAD",
 }
 
 # Strategy toggle
@@ -606,6 +608,8 @@ def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
     # Controls list
     controls = [
         ("1 2 3",    "PD / TIME-OPTIMAL / MPC controller"),
+        ("4",        "WASD mode  (WASD move  QE rotate, robot 0)"),
+        ("6",        "PAD mode   (gamepad sticks drive blue robots)"),
         ("5",        "Toggle autonomous strategy AI"),
         ("R",        "Toggle RL kick policy"),
         ("0",        "Toggle AI dribbler"),
@@ -693,7 +697,7 @@ def main() -> None:
 
     screen = pygame.display.set_mode((DISPLAY_W, HEADER_H + DISPLAY_H + HUD_H))
     pygame.display.set_caption(
-        "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: MANUAL (WASD+QE / gamepad)  |  5: Strategy  |  R: RL Kick  |  Enter: Kick  |  9: Toggle Ball Stuck Reset | 0: Toggle Dribble"
+        "RoboCup — click to move  |  1/2/3: PD/TIME/MPC  |  4: WASD  |  6: PAD  |  5: Strategy  |  R: RL Kick  |  Enter: Kick  |  9: Toggle Ball Stuck Reset | 0: Toggle Dribble"
     )
     clock = pygame.time.Clock()
 
@@ -765,7 +769,7 @@ def main() -> None:
 
     print(
         "[VizNode] Click field to move robot  |  1=PD  2=TIME  3=MPC  "
-        + "4=MANUAL  5=Toggle Strategy  R=Toggle RL Kick  Enter=Kick"
+        + "4=WASD  6=PAD  5=Toggle Strategy  R=Toggle RL Kick  Enter=Kick"
     )
 
     running = True
@@ -816,7 +820,7 @@ def main() -> None:
                     print(f"[VizNode] Mode → {MODES[mode_idx]}")
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if MODES[mode_idx] != "MANUAL":
+                if MODES[mode_idx] not in ("MANUAL", "CONTROLLER"):
                     mx, my = event.pos
                     if HEADER_H <= my < HEADER_H + DISPLAY_H:  # ignore header + HUD
                         wx, wy = s2w(mx, my)
@@ -833,10 +837,10 @@ def main() -> None:
                         )
                         print(f"[VizNode] Target → ({wx:.2f}, {wy:.2f})  [{mode}]")
 
-        # ── Controllers: each connected gamepad drives blue robot at the same
-        # index. Runs every frame regardless of MODES[mode_idx]; strategy_node
-        # leaves these robot ids alone so the controller is the sole source.
-        if joysticks:
+        # ── CONTROLLER mode: each connected gamepad drives blue robot at the
+        # same index. strategy_node leaves these robot ids alone (per the
+        # human_blue_ids hello), so the controller is the sole source here.
+        if joysticks and MODES[mode_idx] == "CONTROLLER":
             direct_msg: dict[str, dict[str, float]] = {}
             kick_msg: dict[str, bool] = {}
             dribble_msg: dict[str, bool] = {}
@@ -866,6 +870,21 @@ def main() -> None:
             if dribble_msg:
                 payload["dribble"] = dribble_msg
             _ = manual_pub.send_string(json.dumps(payload))
+            target_pin = None
+            path_start = None
+
+        # ── MANUAL mode: WASD moves / QE rotates blue robot 0. Mutually
+        # exclusive with CONTROLLER mode by mode-gating, so the two never
+        # publish "direct" for the same robot id on the same tick.
+        if MODES[mode_idx] == "MANUAL":
+            keys = pygame.key.get_pressed()
+            vx = (1.0 if keys[pygame.K_d] else 0.0) - (1.0 if keys[pygame.K_a] else 0.0)
+            vy = (1.0 if keys[pygame.K_w] else 0.0) - (1.0 if keys[pygame.K_s] else 0.0)
+            w  = ((1.0 if keys[pygame.K_q] else 0.0)
+                  - (1.0 if keys[pygame.K_e] else 0.0)) * MANUAL_MAX_OMEGA
+            _ = manual_pub.send_string(json.dumps(
+                {"direct": {"0": {"vx": vx, "vy": vy, "w": w}}}
+            ))
             target_pin = None
             path_start = None
 
