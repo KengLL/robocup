@@ -261,6 +261,10 @@ def decide(
                     # at that angle and its action frame assumes it.
                     tx, ty = rl_skill.target(robot, ball, attacks_right=attacks_right)
                     targets[robot.id] = (tx, ty, team_dir)
+                    # Only RL emits an auto-kick. Classic relies on body push
+                    # so the AI doesn't kick the ball out from under a human
+                    # operator who's nudged near it.
+                    kicks.append(robot.id)
                 else:
                     # Classic: face the motion direction while navigating so the
                     # robot doesn't "shift" sideways with its back to the target.
@@ -271,8 +275,6 @@ def decide(
                     dist = math.hypot(dx, dy)
                     ta = team_dir if dist < ATTACKER_ALIGN_DIST else math.atan2(dy, dx)
                     targets[robot.id] = (float(pt[0]), float(pt[1]), ta)
-                # Possession filter below drops duplicates in the same tick.
-                kicks.append(robot.id)
             elif i == 1:  # supporter — sits past the ball toward opp goal
                 goal = opp_goal(team_color)
                 to_goal = (goal - ball.pos) / (np.linalg.norm(goal - ball.pos) + 1e-6)

@@ -612,6 +612,7 @@ def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
         ("6",        "PAD mode   (gamepad sticks drive blue robots)"),
         ("5",        "Toggle autonomous strategy AI"),
         ("R",        "Toggle RL kick policy"),
+        ("K",        "Kick (robot 0)"),
         ("0",        "Toggle AI dribbler"),
         ("9",        "Toggle ball-stuck auto-reset"),
         ("CLICK",    "Send robot 0 to clicked position"),
@@ -804,7 +805,7 @@ def main() -> None:
                     ))
                     state_str = "ON" if rl_kick_enabled else "OFF"
                     print(f"[VizNode] RL Kick → {state_str}")
-                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                elif event.key in (pygame.K_k, pygame.K_RETURN, pygame.K_KP_ENTER):
                     _ = manual_pub.send_string(json.dumps({"kick": {"0": True}}))
                     print("[VizNode] Kick requested for robot 0")
                 elif event.key == pygame.K_0:

@@ -44,7 +44,7 @@ TEAM_S = TEAM_BLUE_SIZE  # legacy alias, kept for any external readers
 
 # Human controllers drive blue robots 0..NUM_HUMAN_CONTROLLERS-1; the rest of
 # blue is AI. Clamped at runtime by the joysticks actually plugged in.
-NUM_HUMAN_CONTROLLERS = 0
+NUM_HUMAN_CONTROLLERS = 1
 
 # ── Robot hardware (SI units) ────────────────────────────────────────────────
 # TODO(hardware): the four values below came from the Godot demo scene
