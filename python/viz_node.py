@@ -36,6 +36,7 @@ from config import (  # noqa: E402
     GOAL_Y_MAX,
     GOAL_Y_MIN,
     MANUAL_PORT,
+    NUM_HUMAN_CONTROLLERS,
     ROBOT_RADIUS,
     STRATEGY_PORT,
     TEAM_BLUE_SIZE,
@@ -80,6 +81,10 @@ JOYSTICK_DEADZONE = 0.10
 #   Axis 0 = Left stick X,  Axis 1 = Left stick Y (up = -1)
 #   Axis 2 = Right stick X  (right = +1 → clockwise → negative ω)
 JS_AXIS_LX, JS_AXIS_LY, JS_AXIS_RX = 0, 1, 2
+# Xbox button indices (SDL2 mapping):
+#   A=0  B=1  X=2  Y=3  LB=4  RB=5  BACK=6  START=7  LS=8  RS=9
+JS_BTN_KICK = 0    # A — single-press
+JS_BTN_DRIBBLE = 5 # RB — held
 
 HUD_H = 26
 # Top header band carries the timer and half label without overlapping the
@@ -534,6 +539,57 @@ def draw_winner_screen(
     subx = (DISPLAY_W - total_w) // 2
     draw_pixel_text(surf, sub, subx, DISPLAY_H // 2 + 90, (160, 160, 160), pixel=pixel, spacing=1)
 
+# Cache mono-font lookups so we don't re-stat font files on every redraw.
+_MONO_FONT_CACHE: dict[tuple[int, bool], pygame.font.Font] = {}
+# Print which path was used on the first successful (or failed) load.
+_MONO_FONT_LOGGED = False
+
+
+def _load_mono_font(size: int, bold: bool = False) -> pygame.font.Font:
+    """Load a monospace TTF directly, bypassing pygame.font.SysFont().
+
+    SysFont scans the Windows font registry on first call and crashes
+    (TypeError on splitext) when any HKLM\\...\\Fonts entry is a DWORD
+    instead of a path string. Loading a .ttf path skips that scan."""
+    global _MONO_FONT_LOGGED
+    key = (size, bold)
+    cached = _MONO_FONT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    candidates = (
+        r"C:\Windows\Fonts\consola.ttf",
+        r"C:\Windows\Fonts\cour.ttf",
+        "/System/Library/Fonts/Menlo.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    )
+    font: pygame.font.Font | None = None
+    chosen: str | None = None
+    attempts: list[tuple[str, str]] = []
+    for path in candidates:
+        try:
+            font = pygame.font.Font(path, size)
+            chosen = path
+            break
+        except (FileNotFoundError, OSError) as e:
+            attempts.append((path, f"{type(e).__name__}: {e}"))
+            continue
+    if font is None:
+        if not _MONO_FONT_LOGGED:
+            print("[VizNode] WARNING: no monospace font found, falling back to pygame default (not monospace)")
+            for path, err in attempts:
+                print(f"[VizNode]   tried {path} -> {err}")
+            _MONO_FONT_LOGGED = True
+        font = pygame.font.Font(None, size)  # bundled default — not monospace
+    else:
+        if not _MONO_FONT_LOGGED:
+            print(f"[VizNode] mono font loaded: {chosen}")
+            _MONO_FONT_LOGGED = True
+    if bold:
+        font.set_bold(True)
+    _MONO_FONT_CACHE[key] = font
+    return font
+
+
 def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
     """Full screen controls overlay shown at startup."""
     overlay = pygame.Surface((DISPLAY_W, HEADER_H + DISPLAY_H + HUD_H), pygame.SRCALPHA)
@@ -550,13 +606,13 @@ def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
     # Controls list
     controls = [
         ("1 2 3",    "PD / TIME-OPTIMAL / MPC controller"),
-        ("4",        "MANUAL mode  (WASD to move  QE to rotate)"),
         ("5",        "Toggle autonomous strategy AI"),
         ("R",        "Toggle RL kick policy"),
-        ("0",        "Toggle dribbler"),
+        ("0",        "Toggle AI dribbler"),
         ("9",        "Toggle ball-stuck auto-reset"),
         ("CLICK",    "Send robot 0 to clicked position"),
-        ("MOUSE",    "Click field while in PD/TIME/MPC mode"),
+        ("STICKS",   "Left = move  Right = rotate (per controller)"),
+        ("A / RB",   "Kick / hold to dribble (per controller)"),
     ]
 
     game_rules = [
@@ -579,8 +635,8 @@ def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
         draw_pixel_text(surf, header, hx, hy, (100, 200, 255), pixel=pixel, spacing=1)
 
         # use pygame font for the description text — pixel glyphs don't have lowercase
-        font_small = pygame.font.SysFont("monospace", 13)
-        font_key   = pygame.font.SysFont("monospace", 13, bold=True)
+        font_small = _load_mono_font(13)
+        font_key   = _load_mono_font(13, bold=True)
 
         y = hy + 22
         for key, desc in data:
@@ -593,7 +649,7 @@ def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
     # X close button
     pygame.draw.rect(surf, (180, 40, 40), close_rect, border_radius=6)
     pygame.draw.rect(surf, (255, 255, 255), close_rect, 2, border_radius=6)
-    font_x = pygame.font.SysFont("monospace", 18, bold=True)
+    font_x = _load_mono_font(18, bold=True)
     x_surf = font_x.render("X  CLOSE", True, (255, 255, 255))
     surf.blit(x_surf, (
         close_rect.x + (close_rect.width  - x_surf.get_width())  // 2,
@@ -601,7 +657,7 @@ def draw_controls_screen(surf: pygame.Surface, close_rect: pygame.Rect) -> None:
     ))
 
     # small hint at bottom
-    font_hint = pygame.font.SysFont("monospace", 11)
+    font_hint = _load_mono_font(11)
     hint = font_hint.render("press any key or click X to dismiss", True, (120, 120, 120))
     surf.blit(hint, ((DISPLAY_W - hint.get_width()) // 2, HEADER_H + DISPLAY_H + HUD_H - 20))
 
@@ -618,11 +674,22 @@ def main() -> None:
 
 
     pygame.joystick.init()
-    joystick = None
-    if pygame.joystick.get_count() > 0:
-        joystick = pygame.joystick.Joystick(0)
-        joystick.init()
-        print(f"[VizNode] Gamepad detected: {joystick.get_name()}")
+    # Each connected controller drives blue robot at the same index. Cap at
+    # both NUM_HUMAN_CONTROLLERS (config) and what's actually plugged in.
+    n_avail = pygame.joystick.get_count()
+    n_human = min(n_avail, NUM_HUMAN_CONTROLLERS, TEAM_BLUE_SIZE)
+    joysticks: list[pygame.joystick.Joystick] = []
+    for ji in range(n_human):
+        js = pygame.joystick.Joystick(ji)
+        joysticks.append(js)
+        print(f"[VizNode] Controller {ji} → blue robot {ji}: {js.get_name()}")
+    if NUM_HUMAN_CONTROLLERS > 0 and not joysticks:
+        print(f"[VizNode] no controllers plugged in (config wants {NUM_HUMAN_CONTROLLERS}); blue is fully AI")
+    elif n_avail > n_human:
+        print(f"[VizNode] {n_avail - n_human} extra controller(s) ignored (NUM_HUMAN_CONTROLLERS={NUM_HUMAN_CONTROLLERS})")
+    human_blue_ids = list(range(len(joysticks)))
+    # Per-controller previous A-button state for rising-edge kick detection.
+    prev_kick_btn: list[bool] = [False] * len(joysticks)
 
     screen = pygame.display.set_mode((DISPLAY_W, HEADER_H + DISPLAY_H + HUD_H))
     pygame.display.set_caption(
@@ -659,6 +726,12 @@ def main() -> None:
     manual_pub = ctx.socket(zmq.PUB)
     _ = manual_pub.bind(f"tcp://*:{MANUAL_PORT}")
 
+    # ZMQ PUB/SUB has a slow-joiner window; sleep so the launcher's already-up
+    # subscribers have time to attach before we send the human_blue_ids hello.
+    # Resent below on every strategy toggle as a safety net.
+    time.sleep(0.3)
+    _ = manual_pub.send_string(json.dumps({"human_blue_ids": human_blue_ids}))
+
     world_state: dict[str, Any] | None = None
     attacker_rids: set[str] = set()
     score_blue = 0
@@ -676,7 +749,6 @@ def main() -> None:
     confetti_particles: list[dict[str, Any]] = []
 
     mode_idx = 0
-    prev_mode_idx = 0
     strategy_enabled = False
     rl_kick_enabled = False
     dribble_on = False
@@ -713,8 +785,11 @@ def main() -> None:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_5:
                     strategy_enabled = not strategy_enabled
+                    # Re-publish human_blue_ids alongside the toggle so a
+                    # late-starting strategy_node always knows the AI subset.
                     _ = manual_pub.send_string(json.dumps(
-                        {"strategy_enabled": strategy_enabled}
+                        {"strategy_enabled": strategy_enabled,
+                         "human_blue_ids": human_blue_ids}
                     ))
                     state_str = "ON" if strategy_enabled else "OFF"
                     print(f"[VizNode] Strategy → {state_str}")
@@ -737,14 +812,8 @@ def main() -> None:
                     manual_pub.send_string(json.dumps({"type": "ball_stuck_toggle"}))
                     print(f"[VizNode] Ball Stuck Reset → {'ON' if ball_stuck_on else 'OFF'}")
                 elif event.key in MODE_KEYS:
-                    prev_mode_idx = mode_idx
                     mode_idx = MODE_KEYS[event.key]
                     print(f"[VizNode] Mode → {MODES[mode_idx]}")
-                    # Leaving MANUAL: send zero velocity so robot stops immediately
-                    if MODES[prev_mode_idx] == "MANUAL" and mode_idx != prev_mode_idx:
-                        _ = manual_pub.send_string(json.dumps(
-                            {"direct": {"3": {"vx": 0.0, "vy": 0.0, "w": 0.0}}}
-                        ))
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if MODES[mode_idx] != "MANUAL":
@@ -764,31 +833,41 @@ def main() -> None:
                         )
                         print(f"[VizNode] Target → ({wx:.2f}, {wy:.2f})  [{mode}]")
 
-        # ── MANUAL mode: read keyboard / gamepad and publish direct velocity ───
-        if MODES[mode_idx] == "MANUAL":
+        # ── Controllers: each connected gamepad drives blue robot at the same
+        # index. Runs every frame regardless of MODES[mode_idx]; strategy_node
+        # leaves these robot ids alone so the controller is the sole source.
+        if joysticks:
+            direct_msg: dict[str, dict[str, float]] = {}
+            kick_msg: dict[str, bool] = {}
+            dribble_msg: dict[str, bool] = {}
+            for ji, js in enumerate(joysticks):
+                rid_str = str(ji)
+                lx = _apply_deadzone(js.get_axis(JS_AXIS_LX), JOYSTICK_DEADZONE)
+                ly = _apply_deadzone(js.get_axis(JS_AXIS_LY), JOYSTICK_DEADZONE)
+                rx = _apply_deadzone(js.get_axis(JS_AXIS_RX), JOYSTICK_DEADZONE)
+                direct_msg[rid_str] = {
+                    "vx": lx,
+                    "vy": -ly,                    # SDL Y axis is inverted (up = -1)
+                    "w": -rx * MANUAL_MAX_OMEGA,  # right-stick right = CW = -ω
+                }
+                # A: rising-edge kick (one shot per press; sending kick=True
+                # every frame would trigger a kick on every tick).
+                kick = bool(js.get_button(JS_BTN_KICK))
+                if kick and not prev_kick_btn[ji]:
+                    kick_msg[rid_str] = True
+                prev_kick_btn[ji] = kick
+                # RB: held dribble — publish the level every frame so a dropped
+                # ZMQ message can't latch the dribble on or off.
+                dribble_msg[rid_str] = bool(js.get_button(JS_BTN_DRIBBLE))
+
+            payload: dict[str, Any] = {"direct": direct_msg}
+            if kick_msg:
+                payload["kick"] = kick_msg
+            if dribble_msg:
+                payload["dribble"] = dribble_msg
+            _ = manual_pub.send_string(json.dumps(payload))
             target_pin = None
             path_start = None
-
-            keys = pygame.key.get_pressed()
-            vx = (1.0 if keys[pygame.K_d] else 0.0) - (1.0 if keys[pygame.K_a] else 0.0)
-            vy = (1.0 if keys[pygame.K_w] else 0.0) - (1.0 if keys[pygame.K_s] else 0.0)
-            w = (1.0 if keys[pygame.K_q] or keys[pygame.K_j] else 0.0) \
-                - (1.0 if keys[pygame.K_e] or keys[pygame.K_k] else 0.0)
-            w *= MANUAL_MAX_OMEGA
-
-            if joystick is not None:
-                lx = _apply_deadzone(joystick.get_axis(JS_AXIS_LX), JOYSTICK_DEADZONE)
-                ly = _apply_deadzone(joystick.get_axis(JS_AXIS_LY), JOYSTICK_DEADZONE)
-                rx = _apply_deadzone(joystick.get_axis(JS_AXIS_RX), JOYSTICK_DEADZONE)
-                # Left stick overrides keyboard if any gamepad input detected
-                if abs(lx) > 0 or abs(ly) > 0 or abs(rx) > 0:
-                    vx = lx
-                    vy = -ly                      # SDL Y axis is inverted (up = -1)
-                    w = -rx * MANUAL_MAX_OMEGA    # right stick right = clockwise = -ω
-
-            _ = manual_pub.send_string(json.dumps(
-                {"direct": {"3": {"vx": vx, "vy": vy, "w": w}}}
-            ))
 
         # Drain vision (keep latest frame)
         while True:

@@ -333,6 +333,16 @@ def main() -> None:
                             json.dumps({"type": "kick", "robot_id": i})
                         )
 
+                # Per-robot dribble from human controllers. Strategy_node sends
+                # dribble for AI-owned robots only, so these two paths never
+                # fight over the same robot id.
+                for rid_str, active in data.get("dribble", {}).items():
+                    i = int(rid_str)
+                    if 0 <= i < NUM_ROBOTS:
+                        _ = cmd_push.send_string(
+                            json.dumps({"type": "dribble", "robot_id": i, "active": bool(active)})
+                        )
+
             except zmq.Again:
                 break
 

@@ -17,10 +17,10 @@ transfer.
 import math
 
 # ── ZMQ ports ────────────────────────────────────────────────────────────────
-VISION_PORT = 9090    # SimNode   → RobotNode + VizNode  (world state)
+VISION_PORT = 9090  # SimNode   → RobotNode + VizNode  (world state)
 STRATEGY_PORT = 9091  # StrategyNode → RobotNode        (autonomous targets)
-COMMAND_PORT = 9092   # RobotNode → SimNode              (wheel commands)
-MANUAL_PORT = 9093    # VizNode   → RobotNode            (manual click targets)
+COMMAND_PORT = 9092  # RobotNode → SimNode              (wheel commands)
+MANUAL_PORT = 9093  # VizNode   → RobotNode            (manual click targets)
 
 # ── Field geometry (meters) ──────────────────────────────────────────────────
 FIELD_W = 9.0
@@ -42,22 +42,26 @@ TEAM_RED_SIZE = 3
 NUM_ROBOTS = TEAM_BLUE_SIZE + TEAM_RED_SIZE
 TEAM_S = TEAM_BLUE_SIZE  # legacy alias, kept for any external readers
 
+# Human controllers drive blue robots 0..NUM_HUMAN_CONTROLLERS-1; the rest of
+# blue is AI. Clamped at runtime by the joysticks actually plugged in.
+NUM_HUMAN_CONTROLLERS = 2
+
 # ── Robot hardware (SI units) ────────────────────────────────────────────────
 # TODO(hardware): the four values below came from the Godot demo scene
 # (140 px/m). They are DIMENSIONALLY correct (meters, kilograms, newtons)
 # but NUMERICALLY arbitrary and must be re-measured from the real robot.
-ROBOT_RADIUS = 20.0 / 140.0          # ≈ 0.143 m
-ROBOT_MASS = 0.8                     # kg
-WHEEL_DISTANCE = 15.0 / 140.0        # ≈ 0.107 m, radius of wheel placement circle
-MOTOR_MAX_FORCE = 200.0 / 140.0      # ≈ 1.429 N per wheel at full command
+ROBOT_RADIUS = 20.0 / 140.0  # ≈ 0.143 m
+ROBOT_MASS = 0.8  # kg
+WHEEL_DISTANCE = 15.0 / 140.0  # ≈ 0.107 m, radius of wheel placement circle
+MOTOR_MAX_FORCE = 200.0 / 140.0  # ≈ 1.429 N per wheel at full command
 WHEEL_ANGLES = [0.0, 2 * math.pi / 3, 4 * math.pi / 3]
 
 # ── Ball (SI units) ──────────────────────────────────────────────────────────
 # TODO(hardware): real SSL golf ball is 0.0215 m radius / 46 g. The radius
 # value below does not match the comment and needs to be reconciled.
-BALL_RADIUS = 0.043                  # meters (comment in source claims 43 mm diameter)
-BALL_MASS = 0.046                    # kg (46 g, SSL standard)
-BALL_DAMP = 0.5                      # per-second manual velocity damping coefficient
+BALL_RADIUS = 0.043  # meters (comment in source claims 43 mm diameter)
+BALL_MASS = 0.046  # kg (46 g, SSL standard)
+BALL_DAMP = 0.5  # per-second manual velocity damping coefficient
 
 # ── Physics damping (per-second coefficients) ────────────────────────────────
 # TODO(hardware): these are lumped Godot-style damping, not real rolling
@@ -78,9 +82,9 @@ FPS = 60
 DT = 1.0 / FPS
 
 # ── Display (pixels — viz_node only) ─────────────────────────────────────────
-DISPLAY_SCALE = 100.0                # pixels per meter on the Pygame window
-DISPLAY_W = int(FIELD_W * DISPLAY_SCALE)   # 900
-DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)   # 600
+DISPLAY_SCALE = 100.0  # pixels per meter on the Pygame window
+DISPLAY_W = int(FIELD_W * DISPLAY_SCALE)  # 900
+DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)  # 600
 
 # ── Navigation thresholds ────────────────────────────────────────────────────
-ARRIVAL_THRESH = 5.0 / 140.0         # ≈ 0.036 m  (legacy 5 px arrival threshold)
+ARRIVAL_THRESH = 5.0 / 140.0  # ≈ 0.036 m  (legacy 5 px arrival threshold)

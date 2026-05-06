@@ -173,17 +173,28 @@ def decide(
     rl_enabled: bool = False,
     sticky_attackers: dict[str, int] | None = None,
     kicked_off: bool = True,
+    human_blue_ids: set[int] | None = None,
 ) -> tuple[dict[int, tuple[float, float, float]], list[int], set[int]]:
     # Placeholder for Decision Tree
     targets: dict[int, tuple[float, float, float]] = {}
     kicks: list[int] = []
     attacker_rids: set[int] = set()
     sticky = sticky_attackers if sticky_attackers is not None else {}
+    human_ids = human_blue_ids or set()
     ball = gamestate.ball
 
     for team_color, team in (("blue", gamestate.blue), ("red", gamestate.red)):
         attacks_right = team_color == "blue"
         team_dir = 0.0 if attacks_right else math.pi
+
+        # Drop human-driven robots so the AI plans only for what it controls.
+        # The remaining team falls into whichever role-count branch fits its
+        # size (1 → goalie, 2 → attacker+supporter, 3 → +defender).
+        if team_color == "blue" and human_ids:
+            team = [r for r in team if r.id not in human_ids]
+            if not team:
+                sticky.pop(team_color, None)
+                continue
 
         # Single-robot teams act as the lone goalie: stay on the line from
         # own goal to the ball at a small standoff. No kick is emitted.
@@ -422,6 +433,9 @@ def main() -> None:
     rl_enabled = False
     dribble_attacker_enabled = False
     sticky_attackers: dict[str, int] = {}
+    # Blue robot ids driven by human controllers; AI skips planning for them.
+    # viz_node publishes this on the manual port at startup and on toggles.
+    human_blue_ids: set[int] = set()
     # Flips True once the ball has been kicked/pushed. Before that, supporters
     # hold on their own half so they don't barrel into each other at midfield.
     kicked_off = False
@@ -444,6 +458,9 @@ def main() -> None:
             if "dribble_attacker" in msg:
                 dribble_attacker_enabled = bool(msg["dribble_attacker"])
                 print(f"[Strategy node] Dribble (attacker) → {'ON' if dribble_attacker_enabled else 'OFF'}")
+            if "human_blue_ids" in msg:
+                human_blue_ids = {int(x) for x in msg["human_blue_ids"]}
+                print(f"[Strategy node] human_blue_ids → {sorted(human_blue_ids)}")
 
         try:
             gamestate = build_game_state(raw, our_color)
@@ -451,7 +468,8 @@ def main() -> None:
                 kicked_off = True
                 print("[Strategy node] kickoff")
             targets, kicks, attacker_rids = decide(
-                gamestate, rl_skill, rl_enabled, sticky_attackers, kicked_off
+                gamestate, rl_skill, rl_enabled, sticky_attackers, kicked_off,
+                human_blue_ids,
             )
             backend.send_targets({
                 "targets": {
@@ -465,7 +483,11 @@ def main() -> None:
 
             # Route dribble to our team's attacker (closest to ball); everyone
             # else gets OFF so stale state never leaks between attacker changes.
+            # Skip human-driven robots — they own their own dribble state via
+            # the controller's RB button, routed through robot_node.
             our_team = gamestate.blue if our_color == "blue" else gamestate.red
+            if our_color == "blue" and human_blue_ids:
+                our_team = [r for r in our_team if r.id not in human_blue_ids]
             if our_team:
                 attacker_rid = min(our_team, key=lambda r: distance(r.pos, gamestate.ball.pos)).id
                 for r in our_team:
