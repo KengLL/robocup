@@ -23,7 +23,7 @@ MANUAL_PORT = 9093
 
 DEFAULT_RL_CHECKPOINT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "rl", "checkpoints", "first_final", "final.zip",
+    "rl", "checkpoints", "first_final", "ppo_kick_1720608_steps.zip",
 )
 
 from decision_making.geometry import distance, lerp, opp_goal, our_goal  # noqa: E402
@@ -256,6 +256,9 @@ def decide(
                     kick_dir = np.array([math.cos(kick_angle), math.sin(kick_angle)])
                     pt = ball.pos - kick_dir * APPROACH_OFFSET
                     targets[robot.id] = (float(pt[0]), float(pt[1]), kick_angle)
+                    # Fire the kicker every tick — kick.py's zone check gates it
+                    # so it only takes effect once the attacker is positioned.
+                    kicks.append(robot.id)
                 elif rl_enabled and rl_skill is not None and rl_in_dist:
                     # RL: lock to team_dir. Policy was trained with the robot
                     # at that angle and its action frame assumes it.
