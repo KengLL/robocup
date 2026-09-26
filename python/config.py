@@ -88,3 +88,38 @@ DISPLAY_H = int(FIELD_H * DISPLAY_SCALE)  # 600
 
 # ── Navigation thresholds ────────────────────────────────────────────────────
 ARRIVAL_THRESH = 5.0 / 140.0  # ≈ 0.036 m  (legacy 5 px arrival threshold)
+
+# ── Vision mirror (vision_bridge.py) ─────────────────────────────────────────
+# AprilTag id -> sim robot id, or None to auto-assign: each new tag id seen on
+# the field takes the lowest free robot. Mirrored robots ignore wheel/kick/dribble
+# commands; the camera owns them. Override with --tag-map.
+VISION_TAG_MAP = None
+# Tags never mirrored, e.g. field-calibration corner tags (0-3 by default) left on
+# the table. Override with --ignore-tags.
+VISION_IGNORE_TAGS = ()
+
+# Real field origin corner vs sim origin. Flip if goals come out swapped.
+# TODO(calibration): set once the real field's origin corner is fixed.
+VISION_FLIP_X = False
+VISION_FLIP_Y = False
+
+# Age of the last visible sighting (seconds, capture time -> now).
+VISION_FRESH_S = 0.15  # younger: camera drives the body
+VISION_BALL_COAST_S = 0.35  # younger: sim physics coasts the ball
+VISION_ROBOT_COAST_S = 0.5  # younger: robot coasts on its last velocity; older = lost
+
+VISION_BLEND_TAU = 0.10  # seconds, time constant pulling a body onto the measurement
+VISION_SNAP_DIST = 0.5  # meters (sim), teleport instead of blending beyond this
+VISION_SNAP_ANGLE = math.pi / 2  # rad
+
+# Outlier gate, real-world units. A sighting further than
+# max_speed * gap + margin from the last accepted one is rejected.
+VISION_BALL_MAX_SPEED = 4.0  # m/s
+VISION_ROBOT_MAX_SPEED = 2.0  # m/s
+VISION_GATE_MARGIN = 0.05  # meters
+VISION_GATE_RELOCK = 3  # consecutive rejects before accepting anyway
+VISION_FIELD_MARGIN = 0.05  # meters outside the real field before a sighting is dropped
+
+# Gaps longer than this in a replayed log are squashed to VISION_REPLAY_GAP_CAP.
+VISION_REPLAY_GAP_CAP = 1.0  # seconds
+VISION_STATS_WINDOW = 90  # frames, rolling window for detection drop rates

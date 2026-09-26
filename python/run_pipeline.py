@@ -5,6 +5,7 @@ Pipeline Launcher — starts all nodes as separate subprocesses.
 Usage:
     python run_pipeline.py
     python run_pipeline.py --no-viz
+    python run_pipeline.py --vision http://localhost:8000/state
 """
 
 from __future__ import annotations
@@ -68,7 +69,34 @@ def main() -> None:
         default="blue",
         help="Team color for the strategy node",
     )
+    _ = parser.add_argument(
+        "--vision",
+        default=None,
+        help="Mirror camera tracking into the sim (URL, tcp:// ZMQ, or .jsonl replay)",
+    )
+    _ = parser.add_argument("--tag-map", default=None, help='e.g. "0:0,4:1", default auto')
+    _ = parser.add_argument("--ignore-tags", default=None, help='e.g. "0,1,2,3"')
+    _ = parser.add_argument("--flip-x", action="store_true")
+    _ = parser.add_argument("--flip-y", action="store_true")
+    _ = parser.add_argument("--replay-speed", type=float, default=None)
     args = parser.parse_args()
+
+    sim_args: list[str] = []
+    if args.vision:
+        src = args.vision
+        if "://" not in src:
+            src = os.path.abspath(src)  # SimNode runs with cwd=python/
+        sim_args += ["--vision", src]
+    if args.tag_map:
+        sim_args += ["--tag-map", args.tag_map]
+    if args.ignore_tags:
+        sim_args += ["--ignore-tags", args.ignore_tags]
+    if args.flip_x:
+        sim_args.append("--flip-x")
+    if args.flip_y:
+        sim_args.append("--flip-y")
+    if args.replay_speed is not None:
+        sim_args += ["--replay-speed", str(args.replay_speed)]
 
     skip = set()
     if args.no_viz:
@@ -84,9 +112,11 @@ def main() -> None:
     nodes = [(n, s, d) for n, s, d in NODES if n not in skip]
 
     for name, script, cwd in nodes:
-        extra = (
-            ["--mode", "zmq", "--color", args.color] if name == "StrategyNode" else None
-        )
+        extra = None
+        if name == "StrategyNode":
+            extra = ["--mode", "zmq", "--color", args.color]
+        elif name == "SimNode":
+            extra = sim_args
         p = _launch(name, script, cwd, extra_args=extra)
         processes.append(p)
         time.sleep(0.4)  # stagger so PUB sockets bind before SUBs connect

@@ -8,14 +8,19 @@ Receives robot wheel-speed commands on COMMAND_PORT (ZMQ PULL).
 The physics engine lives in :mod:`pymunk_world`. This node owns the
 transport and the gameplay clock (halves, overtime, ball-stuck reset).
 
-In real-world deployment, swap this node for a Vision Node that reads
-AprilTag data — the rest of the pipeline stays identical.
+With --vision, tracked objects are mirrored from the camera (see
+vision_bridge.py); untracked robots stay simulated.
 
 CLI flags:
   --headless   Do not sleep at the end of each tick. Physics advances
                as fast as CPU allows. Useful for CI.
   --seed INT   Seed Python's `random` and numpy RNGs. When set, initial
                robot positions are jittered by a small Gaussian.
+  --vision SRC Mirror track-combined output: http://host:8000/state,
+               tcp://host:5556 (ZMQ), or a recorded .jsonl to replay.
+  --tag-map M  AprilTag id -> robot id, e.g. "0:0,4:1", or "auto" (default).
+  --ignore-tags IDS  Tags never mirrored, e.g. "0,1,2,3" for corner tags.
+  --flip-x / --flip-y  Mirror the camera field if motion comes out reversed.
 """
 
 from __future__ import annotations
@@ -33,13 +38,33 @@ import zmq
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))
 sys.path.insert(0, _HERE)
-from config import COMMAND_PORT, DT, FIELD_H, FIELD_W, NUM_ROBOTS, VISION_PORT
+from config import (
+    COMMAND_PORT,
+    DT,
+    FIELD_H,
+    FIELD_W,
+    NUM_ROBOTS,
+    VISION_FLIP_X,
+    VISION_FLIP_Y,
+    VISION_IGNORE_TAGS,
+    VISION_PORT,
+    VISION_TAG_MAP,
+)
 from pymunk_world import PymunkWorld
+from vision_bridge import (
+    FRESH,
+    LOST,
+    VisionBridge,
+    apply_to_world,
+    parse_ids,
+    parse_tag_map,
+)
 from decision_making.skills.dribble import try_dribble_ball
 
 HALF_DURATION = 300.0  # seconds per half
 BALL_STUCK_THRESHOLD = 0.02
 BALL_STUCK_DURATION = 10.0
+VISION_LOG_PERIOD = 5.0  # seconds between vision stats prints
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RoboCup simulation node")
@@ -55,12 +80,54 @@ def main() -> None:
         help="Seed for random / numpy.random. Also enables Gaussian jitter "
         + "of initial robot positions for domain randomization.",
     )
+    _ = parser.add_argument(
+        "--vision",
+        default=None,
+        help="Mirror camera tracking: http://host:port/state, tcp://host:port "
+        + "(ZMQ), or a .jsonl log to replay.",
+    )
+    _ = parser.add_argument(
+        "--tag-map",
+        default=None,
+        help='AprilTag id -> robot id, e.g. "0:0,4:1", or "auto": each new tag takes '
+        + "the lowest free robot. Default: config.VISION_TAG_MAP (auto).",
+    )
+    _ = parser.add_argument(
+        "--ignore-tags",
+        default=None,
+        help='Tag ids never mirrored, e.g. "0,1,2,3" for field-calibration corner tags.',
+    )
+    _ = parser.add_argument("--flip-x", action="store_true", default=VISION_FLIP_X)
+    _ = parser.add_argument("--flip-y", action="store_true", default=VISION_FLIP_Y)
+    _ = parser.add_argument(
+        "--replay-speed",
+        type=float,
+        default=1.0,
+        help="Playback speed when --vision is a .jsonl file.",
+    )
     args = parser.parse_args()
+    if args.vision and args.headless:
+        parser.error("--vision runs in real time; drop --headless")
 
     if args.seed is not None:
         print(f"[SimNode] seed = {args.seed}  (spawn jitter enabled)")
 
     world = PymunkWorld(seed=args.seed)
+
+    bridge: VisionBridge | None = None
+    if args.vision:
+        tag_map = parse_tag_map(args.tag_map) if args.tag_map else VISION_TAG_MAP
+        ignore = parse_ids(args.ignore_tags) if args.ignore_tags else set(VISION_IGNORE_TAGS)
+        bridge = VisionBridge(
+            args.vision, tag_map, args.replay_speed, ignore, args.flip_x, args.flip_y
+        ).start()
+        world.set_mirrored(bridge.mirrored_rids)
+        print(
+            f"[SimNode] vision ← {args.vision} ({bridge.kind})  "
+            + f"tags→robots {'auto' if tag_map is None else bridge.tag_map}"
+            + (f"  ignoring tags {sorted(ignore)}" if ignore else "")
+        )
+    vision_log_t = time.perf_counter()
 
     ctx = zmq.Context()
     pub = ctx.socket(zmq.PUB)
@@ -86,6 +153,7 @@ def main() -> None:
     ball_stuck_seq = 0
     ball_last_pos = (FIELD_W / 2, FIELD_H / 2)
     ball_stuck_enabled = False  # toggled by viz via message
+    ball_in_goal = False
 
     print(
         f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}"
@@ -122,6 +190,15 @@ def main() -> None:
             except zmq.Again:
                 break
 
+        vision_snap = None
+        if bridge is not None:
+            vision_snap = bridge.poll()
+            if set(vision_snap["robots"]) != world.mirrored:
+                world.set_mirrored(vision_snap["robots"])  # auto map claimed a robot
+            apply_to_world(world, vision_snap)
+        # Camera owns the ball: resets would just get snapped back next frame.
+        vision_ball = vision_snap is not None and vision_snap["ball"].mode != LOST
+
         state = world.step(commands, pending_kicks, dribbling)
         
         for rid in state["kicks"]:
@@ -129,11 +206,16 @@ def main() -> None:
         pending_kicks.clear()
 
         # Scoring — increment counters; reset ball; optionally end the game.
+        # Edge-triggered so a mirrored ball sitting in the goal scores once.
         scoring_team = state["scoring_team"]
+        if ball_in_goal:
+            scoring_team = None
+        ball_in_goal = state["scoring_team"] is not None
         if scoring_team is not None:
             score[scoring_team] += 1
             goal_seq += 1
-            world.reset_ball()
+            if not vision_ball:
+                world.reset_ball()
             last_goal = {
                 "seq": goal_seq,
                 "team": scoring_team,
@@ -186,7 +268,7 @@ def main() -> None:
                         f"[SimNode] OVERTIME FULL TIME — Blue: {score['blue']}  "
                         + f"Red: {score['red']}"
                     )
-        if ball_stuck_enabled:
+        if ball_stuck_enabled and not vision_ball:
             bx, by = state["ball"]["x"], state["ball"]["y"]
             ball_moved = math.hypot(bx - ball_last_pos[0], by - ball_last_pos[1])
             if ball_moved < BALL_STUCK_THRESHOLD:
@@ -228,6 +310,30 @@ def main() -> None:
             "ball": state["ball"],
             "robots": state["robots"],
         }
+        if vision_snap is not None:
+            tags = vision_snap["stats"]["tags"]
+            for rid, s in vision_snap["robots"].items():
+                r = state["robots"][str(rid)]
+                r["source"] = "vision"
+                r["stale"] = s.mode != FRESH
+                r["tag"] = tags.get(str(rid))
+            b = vision_snap["ball"]
+            state["ball"]["source"] = "sim" if b.mode == LOST else "vision"
+            state["ball"]["stale"] = b.mode != FRESH
+            out["vision"] = vision_snap["stats"]
+
+            if time.perf_counter() - vision_log_t > VISION_LOG_PERIOD:
+                vision_log_t = time.perf_counter()
+                st = vision_snap["stats"]
+                drops = "  ".join(
+                    f"{k}:{'-' if v is None else f'{v:.0f}%'}" for k, v in st["drop_pct"].items()
+                )
+                print(
+                    f"[SimNode] vision {'up' if st['link_up'] else 'DOWN'}  "
+                    + f"{st['fps']:.1f} fps  lat {st['latency_ms']:.0f} ms  "
+                    + f"link drops {st['transport_drops']}  rejects {st['rejects']}  "
+                    + f"unseen {drops}"
+                )
         _ = pub.send_string(json.dumps(out))
 
         if not args.headless:

@@ -74,6 +74,7 @@ HUD_MODE_LABELS = {
 # Strategy toggle
 C_STRAT_ON = (0, 255, 0)
 C_STRAT_OFF = (255, 60, 60)
+C_STALE = (130, 130, 130)  # vision-mirrored object the camera isn't currently seeing
 C_ATTACKER = (255, 215, 0)  # gold — outlines the robot currently acting as attacker
 
 # Manual / gamepad settings
@@ -253,6 +254,30 @@ def draw_pixel_text(
                         (cursor_x + col * pixel, y + row * pixel, pixel, pixel),
                     )
         cursor_x += (3 * pixel) + spacing + pixel
+
+
+def draw_vision_stats(surf: pygame.Surface, st: dict[str, Any]) -> None:
+    drops = "  ".join(
+        f"{'ball' if k == 'ball' else 'r' + k} {'-' if v is None else f'{v:.0f}%'}"
+        for k, v in st.get("drop_pct", {}).items()
+    )
+    link = "UP" if st.get("link_up") else "DOWN"
+    # cam drops: frames the tracker was too slow for; link drops: lost between tracker and sim
+    cam = st.get("tracker", {}).get("capture_dropped")
+    text = (
+        f"VISION {st.get('source', '?')} {link}  {st.get('fps', 0):.0f} fps  "
+        f"lat {st.get('latency_ms', 0):.0f} ms  "
+        + ("" if cam is None else f"cam drops {cam}  ")
+        + f"link drops {st.get('transport_drops', 0)}  "
+        f"rejects {st.get('rejects', 0)}  unseen {drops}"
+    )
+    font = _load_mono_font(13)
+    img = font.render(text, True, (255, 80, 80) if link == "DOWN" else C_LINE)
+    y = HEADER_H + DISPLAY_H - img.get_height() - 6
+    bg = pygame.Surface((img.get_width() + 8, img.get_height() + 4), pygame.SRCALPHA)
+    bg.fill((0, 0, 0, 150))
+    surf.blit(bg, (6, y - 2))
+    surf.blit(img, (10, y))
 
 
 def draw_hud(
@@ -997,14 +1022,26 @@ def main() -> None:
             # robot that actually emits the kick this tick.
             for rid, r in robots.items():
                 c = (30, 144, 255) if int(rid) < TEAM_BLUE_SIZE else (255, 80, 80)
+                if r.get("stale"):
+                    c = C_STALE
                 draw_robot(
                     screen, r["x"], r["y"], r["angle"], c,
                     is_attacker=(rid in attacker_rids),
                 )
+                if r.get("tag") is not None:
+                    # Which AprilTag drives this robot (vision mirror).
+                    lbl = _load_mono_font(12).render(f"T{r['tag']}", True, C_LINE)
+                    sx, sy = w2s(r["x"], r["y"])
+                    sy -= int(ROBOT_RADIUS * DISPLAY_SCALE) + 16
+                    screen.blit(lbl, (sx - lbl.get_width() // 2, sy))
 
             if b:
                 bx, by = w2s(b["x"], b["y"])
-                _ = pygame.draw.circle(screen, (230, 120, 0), (bx, by), 5)
+                bc = C_STALE if b.get("stale") and b.get("source") == "vision" else (230, 120, 0)
+                _ = pygame.draw.circle(screen, bc, (bx, by), 5)
+
+        if world_state and world_state.get("vision"):
+            draw_vision_stats(screen, world_state["vision"])
 
         draw_confetti(screen, confetti_particles)
         # phase change popup

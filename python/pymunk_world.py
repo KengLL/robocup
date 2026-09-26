@@ -226,6 +226,8 @@ class PymunkWorld:
 
         self.ball: pymunk.Body = _make_ball(self.space, FIELD_W / 2, FIELD_H / 2)
         self.sim_time: float = 0.0
+        # Robot ids owned by the camera (vision_bridge). Kinematic: sim can't push them.
+        self.mirrored: set[int] = set()
 
     def step(
         self,
@@ -243,6 +245,8 @@ class PymunkWorld:
         # by space.step, so they don't need re-applying inside the substep loop.
         fired: list[int] = []
         for rid in kicks:
+            if rid in self.mirrored:
+                continue  # real robot kicks for itself
             if rid in dribbling:
                 continue  # dribbling takes priority — skip kick
             if 0 <= rid < len(self.robots):
@@ -260,12 +264,14 @@ class PymunkWorld:
         sub_dt = DT / PHYSICS_SUBSTEPS
         for _ in range(PHYSICS_SUBSTEPS):
             for i, body in enumerate(self.robots):
+                if i in self.mirrored:
+                    continue
                 speeds = wheel_cmds.get(i, [0.0, 0.0, 0.0])
                 _apply_wheel_commands(body, speeds)
                 _apply_damping(body, LINEAR_DAMP, ANGULAR_DAMP, sub_dt)
 
             for rid in dribbling:
-                if 0 <= rid < len(self.robots):
+                if 0 <= rid < len(self.robots) and rid not in self.mirrored:
                     try_dribble_ball(self.robots[rid], self.ball, sub_dt)
 
             _apply_damping(self.ball, BALL_DAMP, BALL_DAMP, sub_dt)
@@ -318,3 +324,70 @@ class PymunkWorld:
         body.angle = angle
         body.velocity = (0.0, 0.0)
         body.angular_velocity = 0.0
+
+    # ── vision mirror ────────────────────────────────────────────────────────
+
+    def set_mirrored(self, rids: Iterable[int]) -> None:
+        # Only touch bodies that change hands; already-mirrored ones keep tracking.
+        new = {rid for rid in rids if 0 <= rid < len(self.robots)}
+        for rid in self.mirrored - new:
+            self.robots[rid].body_type = pymunk.Body.DYNAMIC
+        for rid in new - self.mirrored:
+            body = self.robots[rid]
+            body.body_type = pymunk.Body.KINEMATIC
+            body.velocity = (0.0, 0.0)
+            body.angular_velocity = 0.0
+        self.mirrored = new
+
+    def drive_robot(
+        self,
+        rid: int,
+        pos: tuple[float, float],
+        vel: tuple[float, float],
+        angle: float,
+        omega: float,
+        tau: float,
+        snap_dist: float,
+        snap_angle: float,
+    ) -> None:
+        # Velocity servo onto the measurement so contacts with sim bodies stay
+        # physical; teleport only when too far off (reacquire, first sighting).
+        body = self.robots[rid]
+        ex, ey = pos[0] - body.position.x, pos[1] - body.position.y
+        ea = (angle - body.angle + math.pi) % (2.0 * math.pi) - math.pi
+        if math.hypot(ex, ey) > snap_dist or abs(ea) > snap_angle:
+            body.position = (float(pos[0]), float(pos[1]))
+            body.angle = angle
+            body.velocity = (float(vel[0]), float(vel[1]))
+            body.angular_velocity = omega
+            self.space.reindex_shapes_for_body(body)
+            return
+        body.velocity = (vel[0] + ex / tau, vel[1] + ey / tau)
+        body.angular_velocity = omega + ea / tau
+
+    def coast_robot(self, rid: int) -> None:
+        body = self.robots[rid]
+        body.velocity = body.velocity * max(0.0, 1.0 - LINEAR_DAMP * DT)
+        body.angular_velocity *= max(0.0, 1.0 - ANGULAR_DAMP * DT)
+
+    def freeze_robot(self, rid: int) -> None:
+        body = self.robots[rid]
+        body.velocity = (0.0, 0.0)
+        body.angular_velocity = 0.0
+
+    def drive_ball(
+        self,
+        pos: tuple[float, float],
+        vel: tuple[float, float],
+        tau: float,
+        snap_dist: float,
+    ) -> None:
+        # Ball stays dynamic so sim robots still collide with it; the servo
+        # overwrites whatever they did on the next camera-driven tick.
+        ex, ey = pos[0] - self.ball.position.x, pos[1] - self.ball.position.y
+        if math.hypot(ex, ey) > snap_dist:
+            self.ball.position = (float(pos[0]), float(pos[1]))
+            self.ball.velocity = (float(vel[0]), float(vel[1]))
+            self.space.reindex_shapes_for_body(self.ball)
+            return
+        self.ball.velocity = (vel[0] + ex / tau, vel[1] + ey / tau)
