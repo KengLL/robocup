@@ -19,10 +19,12 @@ _PYTHON_DIR = os.path.join(_ROOT, "python")
 if _PYTHON_DIR not in sys.path:
     sys.path.insert(0, _PYTHON_DIR)
 
-from config import ROBOT_RADIUS 
+from config import FIELD_SCALE, ROBOT_RADIUS
 
-DRIBBLE_ZONE_DEPTH      = 0.08   # metres — how far in front the zone extends
-DRIBBLE_ZONE_HALF_WIDTH = 0.12   # metres — half-width of capture zone
+# Zone sizes are 9 x 6 values, shrunk with the robot on a custom --field.
+DRIBBLE_ZONE_DEPTH      = 0.08 * FIELD_SCALE   # metres — how far in front the zone extends
+DRIBBLE_ZONE_HALF_WIDTH = 0.12 * FIELD_SCALE   # metres — half-width of capture zone
+DRIBBLE_CAPTURE_SLACK   = 0.02 * FIELD_SCALE   # metres — extra capture margin past the zone
 
 # Spring-like pull toward the ideal contact point on the robot front face.
 DRIBBLE_SPRING_K   = 18.0   # N/m  — stiffness of the capture spring
@@ -72,9 +74,10 @@ def try_dribble_ball(robot: pymunk.Body, ball: pymunk.Body, dt: float) -> bool:
     zone_max_x = ROBOT_RADIUS + DRIBBLE_ZONE_DEPTH
 
     # Widen capture slightly so ball can be scooped from just outside
-    capture_min_x = ROBOT_RADIUS - 0.01
-    capture_max_x = zone_max_x + 0.02
-    if not (capture_min_x <= lx <= capture_max_x and abs(ly) <= DRIBBLE_ZONE_HALF_WIDTH + 0.02):
+    capture_min_x = ROBOT_RADIUS - DRIBBLE_CAPTURE_SLACK / 2
+    capture_max_x = zone_max_x + DRIBBLE_CAPTURE_SLACK
+    if not (capture_min_x <= lx <= capture_max_x
+            and abs(ly) <= DRIBBLE_ZONE_HALF_WIDTH + DRIBBLE_CAPTURE_SLACK):
         return False
 
     # ── 1. Pull ball toward ideal contact point ──────────────────────────────

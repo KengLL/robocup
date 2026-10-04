@@ -31,6 +31,7 @@ from config import (  # noqa: E402
     DISPLAY_SCALE,
     DISPLAY_W,
     FIELD_H,
+    FIELD_IS_DEFAULT,
     FIELD_W,
     FPS,
     GOAL_Y_MAX,
@@ -157,8 +158,9 @@ def draw_field(surf: pygame.Surface) -> None:
     _ = pygame.draw.line(
         surf, C_LINE, (DISPLAY_W // 2, HEADER_H), (DISPLAY_W // 2, HEADER_H + DISPLAY_H), 2
     )
+    # Centre circle: 0.5 m radius on 9 x 6, same fraction of the width on a custom field.
     _ = pygame.draw.circle(
-        surf, C_LINE, (DISPLAY_W // 2, HEADER_H + DISPLAY_H // 2), int(0.5 * DISPLAY_SCALE), 2
+        surf, C_LINE, (DISPLAY_W // 2, HEADER_H + DISPLAY_H // 2), DISPLAY_W // 18, 2
     )
 
     # Goal-post markers overlaid at the side edges.
@@ -823,6 +825,9 @@ def main() -> None:
                     ))
                     state_str = "ON" if strategy_enabled else "OFF"
                     print(f"[VizNode] Strategy → {state_str}")
+                elif event.key == pygame.K_r and not FIELD_IS_DEFAULT:
+                    print("[VizNode] RL Kick unavailable: policy was trained on 9x6, field is "
+                          + f"{FIELD_W}x{FIELD_H}")
                 elif event.key == pygame.K_r:
                     rl_kick_enabled = not rl_kick_enabled
                     _ = manual_pub.send_string(json.dumps(

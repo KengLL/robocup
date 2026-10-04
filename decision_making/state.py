@@ -1,11 +1,20 @@
+import os
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 
-DRIBBLER_RANGE = 0.05  # ball within this = "has ball", meters
-FIELD_LENGTH = 9.0  # meters
-FIELD_WIDTH = 6.0  # meters
+# Field geometry comes from python/config.py so a custom --field reaches strategy.
+_PYTHON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "python")
+if _PYTHON_DIR not in sys.path:
+    sys.path.insert(0, _PYTHON_DIR)
+
+from config import FIELD_H, FIELD_SCALE, FIELD_W, GOAL_MOUTH_H, GOAL_Y_MAX, GOAL_Y_MIN  # noqa: E402, F401
+
+DRIBBLER_RANGE = 0.05 * FIELD_SCALE  # ball within this = "has ball", meters (9 x 6 value)
+FIELD_LENGTH = FIELD_W  # meters, along x (9 by default)
+FIELD_WIDTH = FIELD_H  # meters, along y (6 by default)
 # 3v3. Robot ids 0..TEAM_BLUE_SIZE-1 are blue;
 # ids TEAM_BLUE_SIZE..TEAM_BLUE_SIZE+TEAM_RED_SIZE-1 are red.
 TEAM_BLUE_SIZE = 3
@@ -50,14 +59,10 @@ class GameState:
 
 
 # Goals (Fixed Positions)
-BLUE_GOAL = np.array([0.0, FIELD_WIDTH / 2])  # [0.0, 3.0]
-RED_GOAL = np.array([FIELD_LENGTH, FIELD_WIDTH / 2])  # [9.0, 3.0]
+BLUE_GOAL = np.array([0.0, FIELD_WIDTH / 2])  # [0.0, 3.0] on 9 x 6
+RED_GOAL = np.array([FIELD_LENGTH, FIELD_WIDTH / 2])  # [9.0, 3.0] on 9 x 6
 
-# Goal mouth bounds (mirrors python/config.py — kept here so decision_making
-# code does not have to reach into the python/ harness for geometry).
-GOAL_MOUTH_H = 200.0 / 140.0  # ≈ 1.43 m
-GOAL_Y_MIN = (FIELD_WIDTH - GOAL_MOUTH_H) / 2.0
-GOAL_Y_MAX = GOAL_Y_MIN + GOAL_MOUTH_H
+# Goal mouth bounds (GOAL_MOUTH_H, GOAL_Y_MIN, GOAL_Y_MAX) are imported from config.
 
 
 # Builder
@@ -69,7 +74,7 @@ def build_game_state(raw: dict[str, Any], our_color: str = "blue") -> GameState:
     ball = raw.get("ball", {})
     vel = np.array([ball.get("vx", 0.0), ball.get("vy", 0.0)])
     gamestate.ball = BallState(
-        pos=np.array([ball.get("x", 4.5), ball.get("y", 3.0)]),
+        pos=np.array([ball.get("x", FIELD_LENGTH / 2), ball.get("y", FIELD_WIDTH / 2)]),
         vel=vel,
         speed=float(np.linalg.norm(vel)),
     )

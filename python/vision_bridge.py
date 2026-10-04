@@ -23,6 +23,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 from config import (  # noqa: E402
     FIELD_H,
+    FIELD_IS_DEFAULT,
     FIELD_W,
     NUM_ROBOTS,
     VISION_BALL_COAST_S,
@@ -213,6 +214,8 @@ class VisionBridge:
         self.robots = {rid: self._new_robot_track() for rid in self.tag_map.values()}
 
         self.field_w, self.field_h = 1.2, 0.8  # tracker default, replaced by each doc
+        # Where the field's first corner sits in tracker coordinates (custom origin).
+        self.x0, self.y0 = 0.0, 0.0
         self._warned_aspect = False
         self._last_key: Any = None
         self._last_seq: int | None = None
@@ -330,7 +333,18 @@ class VisionBridge:
             fld = doc.get("field") or {}
             self.field_w = float(fld.get("width", self.field_w))
             self.field_h = float(fld.get("height", self.field_h))
-            if not self._warned_aspect:
+            # Logs from before custom origins have no x0/y0: corner origin.
+            self.x0 = float(fld.get("x0", 0.0))
+            self.y0 = float(fld.get("y0", 0.0))
+            if not self._warned_aspect and not FIELD_IS_DEFAULT:
+                # True-scale sim: _to_sim() should be 1:1, so the sizes must agree.
+                if max(abs(self.field_w - FIELD_W), abs(self.field_h - FIELD_H)) > 0.005:
+                    print(
+                        f"[VisionBridge] WARNING tracker field {self.field_w}x{self.field_h} "
+                        + f"!= sim --field {FIELD_W}x{FIELD_H}; positions will be rescaled"
+                    )
+                self._warned_aspect = True
+            elif not self._warned_aspect:
                 a_real, a_sim = self.field_w / self.field_h, FIELD_W / FIELD_H
                 if abs(a_real / a_sim - 1.0) > 0.02:
                     print(
@@ -341,6 +355,7 @@ class VisionBridge:
 
             seen_rids: set[int] = set()
             for tag in doc.get("tags") or []:
+                tag = self._to_corner(tag)
                 rid = self._robot_for_tag(tag)
                 if rid is None or rid in seen_rids:
                     continue
@@ -352,9 +367,19 @@ class VisionBridge:
 
             ball = doc.get("ball")
             if ball:
-                self._ingest(self.ball, ball, t_cap, heading=False)
+                self._ingest(self.ball, self._to_corner(ball), t_cap, heading=False)
             else:
                 self.ball.seen.append(False)
+
+    def _to_corner(self, e: dict) -> dict:
+        # Tracker x/y are relative to its chosen origin; everything here (bounds,
+        # gate, flips, scaling) works corner-relative, so shift once on the way in.
+        e = dict(e)
+        if "x" in e:
+            e["x"] = float(e["x"]) - self.x0
+        if "y" in e:
+            e["y"] = float(e["y"]) - self.y0
+        return e
 
     def _ingest(self, tr: _Track, e: dict, t_cap: float, heading: bool) -> None:
         # Only real sightings count. The tracker's own coast is constant-velocity
@@ -386,8 +411,8 @@ class VisionBridge:
         dt = age if mode == FRESH else 0.0
         x, y = tr.x + tr.vx * dt, tr.y + tr.vy * dt
         theta = tr.theta + tr.omega * dt
-        # TODO(hardware): uniform scale inflates speeds (x7.5 for a 1.2 m table);
-        # run the sim at real field size before trusting dynamics.
+        # TODO(hardware): on the default 9 x 6 field this inflates speeds (x4.7 for a
+        # 1.93 m table); run_pipeline.py --field makes the sim true-size and this 1:1.
         sx, sy = FIELD_W / self.field_w, FIELD_H / self.field_h
         x, y, vx, vy = x * sx, y * sy, tr.vx * sx, tr.vy * sy
         omega = tr.omega

@@ -21,6 +21,9 @@ CLI flags:
   --tag-map M  AprilTag id -> robot id, e.g. "0:0,4:1", or "auto" (default).
   --ignore-tags IDS  Tags never mirrored, e.g. "0,1,2,3" for corner tags.
   --flip-x / --flip-y  Mirror the camera field if motion comes out reversed.
+
+Field size is 9 x 6 m unless ROBOCUP_FIELD is set (see config.py;
+run_pipeline.py --field sets it).
 """
 
 from __future__ import annotations
@@ -157,7 +160,7 @@ def main() -> None:
 
     print(
         f"[SimNode] world-state → :{VISION_PORT}   commands ← :{COMMAND_PORT}"
-        + f"   headless={args.headless}"
+        + f"   headless={args.headless}   field {FIELD_W} x {FIELD_H} m"
     )
 
     while True:

@@ -6,6 +6,8 @@ Usage:
     python run_pipeline.py
     python run_pipeline.py --no-viz
     python run_pipeline.py --vision http://localhost:8000/state
+    python run_pipeline.py --vision tcp://localhost:5556 --field 1.93 1.32
+    python run_pipeline.py --vision tcp://localhost:5556 --field ../../robocup_testing/calib/field_pose.json
 """
 
 from __future__ import annotations
@@ -18,6 +20,9 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from config import FIELD_ENV, parse_field  # noqa: E402
+
 DECISION_DIR = os.path.join(os.path.dirname(HERE), "decision_making")
 
 # Ordered start sequence: simulation must bind its sockets before others connect.
@@ -79,7 +84,26 @@ def main() -> None:
     _ = parser.add_argument("--flip-x", action="store_true")
     _ = parser.add_argument("--flip-y", action="store_true")
     _ = parser.add_argument("--replay-speed", type=float, default=None)
+    _ = parser.add_argument(
+        "--field",
+        nargs="+",
+        metavar="W H | FILE",
+        default=None,
+        help="True-size sim field in metres, or robocup_testing's calib/field_pose.json. "
+        + "Default 9 x 6 (camera field stretched onto it).",
+    )
     args = parser.parse_args()
+
+    if args.field:
+        if len(args.field) not in (1, 2):
+            parser.error("--field takes W H or one calibration file")
+        try:
+            fw, fh = parse_field(" ".join(args.field))
+        except ValueError as e:
+            parser.error(str(e))
+        # config.py reads this at import, in every child process.
+        os.environ[FIELD_ENV] = f"{fw} {fh}"
+        print(f"[Launcher] sim field {fw} x {fh} m")
 
     sim_args: list[str] = []
     if args.vision:

@@ -25,6 +25,8 @@ from config import (  # noqa: E402
     BALL_DAMP,
     BALL_MASS,
     BALL_RADIUS,
+    DEFAULT_FIELD_H,
+    DEFAULT_FIELD_W,
     DT,
     FIELD_H,
     FIELD_W,
@@ -65,7 +67,9 @@ SPAWN_JITTER_STD = 0.10 # meters per axis, only applied when a seed is given
 
 # 3v3 spawn layout, mirrored across x = FIELD_W/2: each team has a goalie
 # (ids 0, 3) in front of its goal and two forwards on the half-field line.
-NOMINAL_SPAWNS: list[tuple[float, float, float]] = [
+# Written for 9 x 6; a custom field keeps the same fractions, clamped so a
+# full-size robot doesn't start inside a wall.
+_SPAWNS_9x6: list[tuple[float, float, float]] = [
     (0.5, 3.0, 0.0),
     (3.0, 1.5, 0.0),
     (3.0, 4.5, 0.0),
@@ -73,6 +77,16 @@ NOMINAL_SPAWNS: list[tuple[float, float, float]] = [
     (6.0, 1.5, math.pi),
     (6.0, 4.5, math.pi),
 ]
+
+
+def _fit_spawn(x: float, y: float, a: float) -> tuple[float, float, float]:
+    x *= FIELD_W / DEFAULT_FIELD_W
+    y *= FIELD_H / DEFAULT_FIELD_H
+    r = ROBOT_RADIUS
+    return min(max(x, r), FIELD_W - r), min(max(y, r), FIELD_H - r), a
+
+
+NOMINAL_SPAWNS: list[tuple[float, float, float]] = [_fit_spawn(*s) for s in _SPAWNS_9x6]
 
 
 def _make_robot(

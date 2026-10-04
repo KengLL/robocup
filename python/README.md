@@ -105,6 +105,7 @@ python run_pipeline.py --color red
 # Mirror the real field from the camera, or replay a recording (see Vision Mirror)
 python run_pipeline.py --vision tcp://localhost:5556
 python run_pipeline.py --vision path/to/session.jsonl
+python run_pipeline.py --vision tcp://localhost:5556 --field 1.93 1.32   # sim field at the real table's size
 ```
 
 Press **Ctrl+C** to stop all nodes cleanly.
@@ -174,19 +175,24 @@ python viz_node.py                                     # # connects to sim, rend
 1. **Folders.** Commands below assume both repos sit side by side:
    `F:\Cornell\CornellCupRobotics\robocup` and `F:\Cornell\CornellCupRobotics\robocup_testing`. Adjust paths if yours differ.
 2. **Sim environment.** See [Setup](#setup). Every sim command runs **from `robocup\python`**. With uv, prefix it with `uv run --no-project python`; with pip, just `python`.
-3. **Tracker environment** (live only). In robocup_testing, use the `sim-feed` branch: `--zmq-pub`, `--no-window` and `--mjpg` aren't on main yet.
+3. **Tracker environment** (live only). robocup_testing's `main` has everything (`--zmq-pub`, `--no-window`, `--mjpg`); the old `sim-feed` branch isn't needed.
    ```powershell
    cd F:\Cornell\CornellCupRobotics\robocup_testing
-   git checkout sim-feed
+   git checkout main
+   git pull
    uv sync --all-packages --extra zmq   # --extra zmq pulls in pyzmq for --zmq-pub
    ```
 4. **Calibration** (live only). Without it tag and ball positions are off, and the sim drops sightings that land outside the field.
    ```powershell
    uv run calibrate-camera                      # lens, writes calib/intrinsics.json
-   uv run calibrate-field --field 1.2 0.8       # your measured field W H in metres
+   uv run calibrate-field --field 1.93 1.32     # your measured field W H in metres, once
    uv run calibrate-ball --profile mine --radius-mm 20   # only if your ball has no profile yet
    ```
-   Profiles live in `calib/ball_color.json`. sim-feed has `mine` and `lab`; `arkart` is only on main (see [Troubleshooting](#troubleshooting)).
+   `calibrate-field` saves the field size in `calib/field_pose.json`, so `track-combined` needs no `--field` afterwards and every doc it sends carries the right size. Redo it (with `--field`) if you move the camera or change the table. Calibrations from before this was added have no size saved; `track-combined` then falls back to 1.2 x 0.8.
+
+   `calibrate-field` also asks where `(0,0)` should be (click it, or `--origin center`, or `--no-origin` for the first corner). Any origin works with the sim: each doc's `field` block says where the first corner sits (`x0`, `y0`), and the sim measures from there. Axes stay the same; only the zero moves.
+
+   Ball profiles live in `calib/ball_color.json` (`mine`, `lab`, `arkart`).
 
 ### A. Replay a recording (no camera)
 
@@ -196,6 +202,7 @@ uv run --no-project python run_pipeline.py --vision ..\..\robocup_testing\sessio
 ```
 
 - Add `--replay-speed 3` to fast-forward. The replay loops at the end.
+- Add `--field 1.93 1.32` to replay at true size (see [D](#d-true-size-field)).
 - `session.jsonl` is about 14 min: tag 4 until ~7.8 min, then tag 0. With auto mapping tag 4 claims robot 0 once it first lands on the field, and tag 0 then takes robot 1. Tag 4 was recorded uncalibrated, so its robot is mostly grey. `--tag-map 0:0,4:1` gives the old fixed layout.
 - Logs from either tracker branch replay the same way.
 
@@ -208,7 +215,7 @@ cd F:\Cornell\CornellCupRobotics\robocup_testing
 uv run track-combined --ball-profile mine --tag-size 0.080 --mjpg --zmq-pub "tcp://*:5556"
 ```
 
-`--ball-profile` is your profile name and `--tag-size` your tag's measured black square in metres. Keep the quotes around `tcp://*:5556`. Leave the window on the first time to check detections; add `--no-window` once you trust it.
+`--ball-profile` is your profile name and `--tag-size` your tag's measured black square in metres. No `--field`: the tracker uses the size saved by `calibrate-field`. Keep the quotes around `tcp://*:5556`. Leave the window on the first time to check detections; add `--no-window` once you trust it.
 
 **Terminal 2, sim:**
 
@@ -239,7 +246,22 @@ One JSON line per frame, appended (a second launch adds a new run to the same fi
 uv run --no-project python run_pipeline.py --vision ..\..\robocup_testing\runs\myrun.jsonl
 ```
 
-robocup_testing does **not** gitignore `*.jsonl` yet (its README says it does), so recordings show up in `git status` there. Don't commit them by accident.
+### D. True-size field
+
+By default the sim field is 9 x 6 m and the real table is stretched onto it, so a 1.93 m table plays 4.7x too fast. `--field` makes the sim field the real size instead: camera metres map 1:1 and speeds are real.
+
+```powershell
+cd F:\Cornell\CornellCupRobotics\robocup\python
+uv run --no-project python run_pipeline.py --vision tcp://localhost:5556 --field ..\..\robocup_testing\calib\field_pose.json
+uv run --no-project python run_pipeline.py --vision ..\..\robocup_testing\test.jsonl --field 1.93 1.32
+```
+
+- `--field W H` in metres, or the tracker's `calib/field_pose.json` (reads its saved `field` size). Use the same size the tracker was calibrated with; the sim warns if the tracker's `field` differs by more than 5 mm.
+- Every node gets it (SimNode, StrategyNode, RobotNode, VizNode), via the `ROBOCUP_FIELD` environment variable that `run_pipeline.py` sets. For a node run on its own: `$env:ROBOCUP_FIELD = "1.93 1.32"` (PowerShell) or `ROBOCUP_FIELD="1.93 1.32"` (bash).
+- What follows the field: walls, goal mouth (same fraction of the field height as on 9 x 6, ~0.31 m on a 1.32 m table), spawn points, the strategy's field and goal positions, and the window, which stays ~900 px wide.
+- What doesn't: robot and ball size, physics, and the strategy's tuned distances (approach offset, goalie standoff, ...) keep their 9 x 6 values, so simulated robots are oversized on a small table.
+- The RL kick policy was trained on 9 x 6 and is off: `R` in the viewer does nothing, and the attacker always uses the classic approach.
+- Works with or without `--vision`.
 
 ### Flags
 
@@ -252,17 +274,18 @@ Sim (`run_pipeline.py`, passed through to `simulation_node.py`):
 | `--ignore-tags IDS` | Tags never mirrored, e.g. `0,1,2,3` for the corner reference tags. |
 | `--flip-x`, `--flip-y` | Mirror the camera field if a robot moves opposite to its tag (origin in a different corner). |
 | `--replay-speed X` | Replay only. Default 1. |
+| `--field W H` / `--field FILE` | True-size sim field (see [D](#d-true-size-field)). `FILE` is robocup_testing's `calib/field_pose.json`. Default 9 x 6 with the real field stretched onto it. |
 | `--no-viz`, `--no-strategy` | As usual. |
 
 Tracker (`track-combined`):
 
 | Flag | Meaning |
 |------|---------|
-| `--zmq-pub "tcp://*:5556"` | Push every frame to the sim (sim-feed branch) |
+| `--zmq-pub "tcp://*:5556"` | Push every frame to the sim |
 | `--serve-http PORT` | Serve the latest frame for HTTP polling |
 | `--json-log FILE` | Record every frame for replay |
-| `--no-window` | Headless, a few fps faster; Ctrl+C quits (sim-feed branch) |
-| `--mjpg` | MJPG from the webcam, needed by many USB cams for 720p at 30 fps (sim-feed branch) |
+| `--no-window` | Headless, a few fps faster; Ctrl+C quits |
+| `--mjpg` | MJPG from the webcam, needed by many USB cams for 720p at 30 fps |
 | `--ball-profile NAME` | Ball color profile from `calib/ball_color.json` |
 | `--tag-size M` | Measured tag black-square size, metres (default 0.080) |
 
@@ -272,19 +295,22 @@ Tracker (`track-combined`):
 |---------|-----|
 | `can't open file ...\robocup\run_pipeline.py` | Run from `robocup\python`, or call `python\run_pipeline.py`. |
 | PowerShell: `The '<' operator is reserved` | A placeholder was pasted literally. Use a real value, e.g. `--ball-profile mine`. |
-| Unknown ball profile `arkart` on sim-feed | It's only on main. Copy main's profiles without committing: `git show main:calib/ball_color.json \| Set-Content -Encoding utf8 calib/ball_color.json`, and undo with `git checkout -- calib/ball_color.json` before switching branch. Or run `calibrate-ball` on sim-feed. |
-| `--zmq-pub` unrecognized, or "needs pyzmq" | Tracker isn't on sim-feed, or run `uv sync --all-packages --extra zmq`. |
+| Unknown ball profile | Tracker is on an old branch: `git checkout main` and `git pull`, or run `calibrate-ball`. |
+| `--zmq-pub` unrecognized, or "needs pyzmq" | Tracker is out of date (`git checkout main`, `git pull`), or run `uv sync --all-packages --extra zmq`. |
 | Strip says `DOWN` | Tracker not running, or `--vision` endpoint/port doesn't match `--zmq-pub`. |
 | `Address in use` | Another pipeline or tracker is still running. Close it (check Task Manager for stray `python.exe`). |
 | Robot doesn't follow the tag | Check the terminal for `tag N -> robot R` (auto) or `tag N seen but not in --tag-map`. No line at all means the tag never landed on the field: recalibrate. A robot parked in a corner is a corner reference tag: add `--ignore-tags 0,1,2,3`. |
 | Robot follows but moves the wrong way | `--flip-x` and/or `--flip-y`. |
 | A robot stays grey | Tag not seen recently, or its positions land off the field: recalibrate the field, and watch for the tracker's off-plane warning. |
+| `--field ...field_pose.json`: no field width/height | The calibration predates saved sizes. Re-run `uv run calibrate-field --field W H`, or pass the numbers. |
+| `tracker field ... != sim --field ...` | `--field` doesn't match what the tracker was calibrated with. Use the same numbers, or pass the calibration file. |
 | Camera won't open / dark green picture | Close other apps using it; `uv run unlock-camera` in robocup_testing. |
 
 ### How it works
 
 - **Sources:** `http://.../state` (track-combined `--serve-http`, polled at 60 Hz), `tcp://host:port` (ZMQ SUB, CONFLATE), or a `.jsonl` log replayed at recorded speed (`--replay-speed`, loops at EOF).
-- **Mapping:** auto by default (`VISION_TAG_MAP = None`): a tag claims a robot on its first visible, on-field sighting and keeps it; `--ignore-tags` / `VISION_IGNORE_TAGS` exclude ids. `--tag-map TAG:ROBOT,...` pins them instead and warns once about unmapped tags. The real field (from the doc's `field`) is scaled onto 9 x 6 m; `--flip-x/--flip-y` (`VISION_FLIP_X/Y`) pick the origin corner.
+- **Mapping:** auto by default (`VISION_TAG_MAP = None`): a tag claims a robot on its first visible, on-field sighting and keeps it; `--ignore-tags` / `VISION_IGNORE_TAGS` exclude ids. `--tag-map TAG:ROBOT,...` pins them instead and warns once about unmapped tags.
+- **Coordinates:** positions are shifted to the field's first corner on arrival (`x - x0`, `y - y0` from the doc's `field`; missing = 0, as in older logs), so a custom tracker origin works. The real field (`field` `width`/`height`) is then scaled onto the sim field: 9 x 6 m by default, 1:1 with `--field`. `--flip-x/--flip-y` (`VISION_FLIP_X/Y`) pick the origin corner.
 - **Per-object state**, from the age of the last accepted sighting:
 
 | State | Age | Robot | Ball |
@@ -299,7 +325,7 @@ Tracker (`track-combined`):
 - World state gains `source` / `stale` on robots and ball, and a `vision` stats block (fps, latency, transport drops from `seq` gaps, duplicates, rejects, per-object unseen %, and the tracker's own `stats` under `tracker`). VizNode greys stale objects and shows the stats along the bottom of the field.
 - Reads both tracker formats: `seq` / `t_capture` / `lost` / `stats` (sim-feed branch) and `frame` / `run_id` (main). A new `run_id` is a tracker restart, not dropped frames. Replay keeps each frame's recorded capture-to-publish delay.
 
-TODO(hardware): scaling a 1.2 m table up to 9 m inflates speeds x7.5. Fine for viewing, wrong for tuning control or RL.
+TODO(hardware): without `--field`, scaling a 1.93 m table up to 9 m inflates speeds x4.7. Fine for viewing, wrong for tuning control or RL; use `--field` (robots and strategy distances are still 9 x 6-sized there).
 
 ## Deployment Notes
 

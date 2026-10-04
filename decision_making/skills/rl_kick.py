@@ -19,7 +19,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(os.path.dirname(_HERE))
 sys.path.insert(0, os.path.join(_ROOT, "python"))
 
-from config import FIELD_H, FIELD_W  # noqa: E402
+from config import FIELD_H, FIELD_IS_DEFAULT, FIELD_W  # noqa: E402
 
 from decision_making.rl.env import SUBGOAL_RANGE, make_kick_obs
 from decision_making.state import BallState, RobotState
@@ -27,6 +27,12 @@ from decision_making.state import BallState, RobotState
 
 class RLKickSkill:
     def __init__(self, checkpoint_path: str):
+        if not FIELD_IS_DEFAULT:
+            # Obs/actions are in 9 x 6 metres; a smaller field would feed it nonsense.
+            raise RuntimeError(
+                f"RL kick was trained on a 9x6 field, sim field is {FIELD_W}x{FIELD_H}; "
+                + "classic attacker only"
+            )
         self._model: PPO = PPO.load(checkpoint_path, device="cpu")
         self._ckpt_path: str = checkpoint_path
 

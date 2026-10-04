@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(_ROOT, "python"))
 
 from config import (  # noqa: E402
     FIELD_H,
+    FIELD_IS_DEFAULT,
     FIELD_W,
     GOAL_Y_MAX,
     GOAL_Y_MIN,
@@ -183,6 +184,12 @@ class KickEnv(gym.Env[np.ndarray, np.ndarray]):
 
     def __init__(self, seed: int | None = None):
         super().__init__()
+        if not FIELD_IS_DEFAULT:
+            # Reset boxes, obs bounds and the shipped checkpoints assume 9 x 6.
+            raise RuntimeError(
+                f"KickEnv needs the default 9x6 field, got {FIELD_W}x{FIELD_H} "
+                + "(unset ROBOCUP_FIELD)"
+            )
 
         self.action_space: spaces.Space[np.ndarray] = spaces.Box(
             low=-1.0, high=1.0, shape=(3,), dtype=np.float32
