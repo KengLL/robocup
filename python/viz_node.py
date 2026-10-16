@@ -271,7 +271,7 @@ def draw_vision_stats(surf: pygame.Surface, st: dict[str, Any]) -> None:
         f"lat {st.get('latency_ms', 0):.0f} ms  "
         + ("" if cam is None else f"cam drops {cam}  ")
         + f"link drops {st.get('transport_drops', 0)}  "
-        f"rejects {st.get('rejects', 0)}  unseen {drops}"
+        f"rejects {st.get('rejects', 0)}  predicted {st.get('predicted', 0)}  unseen {drops}"
     )
     font = _load_mono_font(13)
     img = font.render(text, True, (255, 80, 80) if link == "DOWN" else C_LINE)

@@ -335,6 +335,7 @@ def main() -> None:
                     f"[SimNode] vision {'up' if st['link_up'] else 'DOWN'}  "
                     + f"{st['fps']:.1f} fps  lat {st['latency_ms']:.0f} ms  "
                     + f"link drops {st['transport_drops']}  rejects {st['rejects']}  "
+                    + f"predicted {st['predicted']}  "
                     + f"unseen {drops}"
                 )
         _ = pub.send_string(json.dumps(out))
