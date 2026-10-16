@@ -316,13 +316,15 @@ Tracker (`track-combined`):
 | State | Age | Robot | Ball |
 |-------|-----|-------|------|
 | fresh | < `VISION_FRESH_S` | kinematic, velocity-servoed onto the dead-reckoned measurement | velocity-servoed |
+| predict | < `VISION_*_COAST_S`, tracker still coasting | as fresh, onto the tracker's Kalman prediction | as fresh |
 | coast | < `VISION_*_COAST_S` | keeps last velocity, damped | sim physics |
 | lost  | older / never seen | frozen in place | back to sim |
 
-- Sightings are dropped if the tracker marks them not visible or lost, if they fall outside the real field (`VISION_FIELD_MARGIN`), or if they jump further than `max_speed * gap + margin` (outlier gate, relocks after `VISION_GATE_RELOCK` rejects). The tracker's own coasted positions are never used.
+- **Reach circle:** objects move continuously, so `gap` seconds after the last accepted sighting each is inside a circle the physics allows. The limits come from the drive model in `config.py`: `ROBOT_MAX_ACCEL` = 2 x `MOTOR_MAX_FORCE` / `ROBOT_MASS` (3.57 m/s²) and `ROBOT_MAX_SPEED` = that / `LINEAR_DAMP` (1.19 m/s). A robot's circle is centred where its measured velocity carries it under damping, with the radius thrust can add in any direction (about 5 cm one frame out, mostly `VISION_GATE_MARGIN`). The ball can be kicked at any instant, so its circle is `MAX_BALL_SPEED` (6.5 m/s) x `gap` around it. `VISION_VEL_NOISE` covers the tracker's velocity error. Sightings outside are rejected (outlier gate, relocks after `VISION_GATE_RELOCK` rejects); predictions and dead-reckoning are clamped into it and speeds capped at `max_speed`.
+- Sightings are dropped if the tracker marks them lost or they fall outside the real field (`VISION_FIELD_MARGIN`). Not-visible entries are the tracker's Kalman coast: with `VISION_TRACKER_COAST` they drive the body (`predict`) through short dropouts, clamped to the reach circle and the field, instead of handing it to sim physics. They never count as sightings, so they can't move the circle or extend the coast. `stale` is true for anything but `fresh`.
 - Error above `VISION_SNAP_DIST` teleports instead of blending (first sighting, reacquire).
 - Mirrored robots ignore wheel, kick and dribble commands. Goals are edge-triggered and a camera-owned ball is not reset.
-- World state gains `source` / `stale` on robots and ball, and a `vision` stats block (fps, latency, transport drops from `seq` gaps, duplicates, rejects, per-object unseen %, and the tracker's own `stats` under `tracker`). VizNode greys stale objects and shows the stats along the bottom of the field.
+- World state gains `source` / `stale` on robots and ball, and a `vision` stats block (fps, latency, transport drops from `seq` gaps, duplicates, rejects, tracker-coast entries used (`predicted`), per-object unseen %, and the tracker's own `stats` under `tracker`). VizNode greys stale objects and shows the stats along the bottom of the field.
 - Reads both tracker formats: `seq` / `t_capture` / `lost` / `stats` (sim-feed branch) and `frame` / `run_id` (main). A new `run_id` is a tracker restart, not dropped frames. Replay keeps each frame's recorded capture-to-publish delay.
 
 TODO(hardware): without `--field`, scaling a 1.93 m table up to 9 m inflates speeds x4.7. Fine for viewing, wrong for tuning control or RL; use `--field` (robots and strategy distances are still 9 x 6-sized there).
