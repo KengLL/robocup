@@ -107,12 +107,25 @@ WHEEL_ANGLES = [0.0, 2 * math.pi / 3, 4 * math.pi / 3]
 BALL_RADIUS = 0.043 * FIELD_SCALE  # meters on 9 x 6 (comment in source claims 43 mm diameter)
 BALL_MASS = 0.046  # kg (46 g, SSL standard)
 BALL_DAMP = 0.5  # per-second manual velocity damping coefficient
+# SSL kick-speed cap, rules 8.4.2 "Ball Speed": a robot must not accelerate the
+# ball faster than 6.5 m/s. https://robocup-ssl.github.io/ssl-rules/sslrules.html#_ball_speed
+# pymunk_world clamps the ball to it every tick.
+MAX_BALL_SPEED = 6.5  # m/s
 
 # ── Physics damping (per-second coefficients) ────────────────────────────────
 # TODO(hardware): these are lumped Godot-style damping, not real rolling
 # friction. Replace with a measured coastdown curve for the real robot.
 LINEAR_DAMP = 3.0
 ANGULAR_DAMP = 3.0
+
+# ── Robot limits, implied by the drive model above ───────────────────────────
+# pymunk_world pushes each wheel with wheel_speed * MOTOR_MAX_FORCE, speeds in
+# [-1, 1], and damps velocity by LINEAR_DAMP. Three wheels 120 deg apart net at
+# most 2 * MOTOR_MAX_FORCE (e.g. (1, -1, -1)), so dv/dt = a - LINEAR_DAMP * v
+# with |a| <= ROBOT_MAX_ACCEL, which levels off at ROBOT_MAX_SPEED.
+# TODO(hardware): follow the constants above; re-derive once they are measured.
+ROBOT_MAX_ACCEL = 2.0 * MOTOR_MAX_FORCE / ROBOT_MASS  # ≈ 3.57 m/s^2
+ROBOT_MAX_SPEED = ROBOT_MAX_ACCEL / LINEAR_DAMP  # ≈ 1.19 m/s
 
 # ── Low-level controller gains (robot_node.py) ───────────────────────────────
 KP = 15.0
@@ -158,13 +171,20 @@ VISION_BLEND_TAU = 0.10  # seconds, time constant pulling a body onto the measur
 VISION_SNAP_DIST = 0.5  # meters (sim), teleport instead of blending beyond this
 VISION_SNAP_ANGLE = math.pi / 2  # rad
 
-# Outlier gate, real-world units. A sighting further than
-# max_speed * gap + margin from the last accepted one is rejected.
-VISION_BALL_MAX_SPEED = 4.0  # m/s
-VISION_ROBOT_MAX_SPEED = 2.0  # m/s
-VISION_GATE_MARGIN = 0.05  # meters
+# Reach circle, real-world units: objects move continuously, so `gap` seconds
+# after the last accepted sighting each is inside a circle the physics allows.
+# Robot: starts from its measured velocity, damped by LINEAR_DAMP, plus whatever
+# ROBOT_MAX_ACCEL can add in any direction. Ball: a kick can set any velocity up
+# to MAX_BALL_SPEED at any instant, so MAX_BALL_SPEED * gap around it.
+# Sightings outside are rejected (outlier gate); predictions and dead-reckoning
+# are clamped into it, and speeds capped at ROBOT_MAX_SPEED / MAX_BALL_SPEED.
+VISION_GATE_MARGIN = 0.05  # meters, position noise of one sighting
+VISION_VEL_NOISE = 0.1  # m/s, error on the tracker's Kalman velocity
 VISION_GATE_RELOCK = 3  # consecutive rejects before accepting anyway
 VISION_FIELD_MARGIN = 0.05  # meters outside the real field before a sighting is dropped
+# Ride the tracker's Kalman coast (visible: false) through short dropouts instead
+# of handing the body to sim physics. Bounded by the reach circle.
+VISION_TRACKER_COAST = True
 
 # Gaps longer than this in a replayed log are squashed to VISION_REPLAY_GAP_CAP.
 VISION_REPLAY_GAP_CAP = 1.0  # seconds

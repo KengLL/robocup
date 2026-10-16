@@ -33,6 +33,7 @@ from config import (  # noqa: E402
     GOAL_Y_MAX,
     GOAL_Y_MIN,
     LINEAR_DAMP,
+    MAX_BALL_SPEED,
     MOTOR_MAX_FORCE,
     NUM_ROBOTS,
     ROBOT_MASS,
@@ -54,9 +55,8 @@ CATEGORY_WALL  = 0b100
 # collision detection catches fast balls without CCD.
 WALL_HALF_THICKNESS = 0.10
 
-# Real SSL kick-speed cap. Doubles as a tunneling safety: ball travel/substep
+# MAX_BALL_SPEED (config) doubles as a tunneling safety: ball travel/substep
 # stays well under the wall band even at full speed.
-MAX_BALL_SPEED = 6.5
 
 # Physics substeps per outer tick. More iterations on the constraint solver
 # resolve robot+ball+wall pin contacts that otherwise pop the ball through.

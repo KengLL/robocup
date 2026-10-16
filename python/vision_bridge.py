@@ -22,12 +22,16 @@ from typing import Any, Callable
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 from config import (  # noqa: E402
+    BALL_DAMP,
     FIELD_H,
     FIELD_IS_DEFAULT,
     FIELD_W,
+    LINEAR_DAMP,
+    MAX_BALL_SPEED,
     NUM_ROBOTS,
+    ROBOT_MAX_ACCEL,
+    ROBOT_MAX_SPEED,
     VISION_BALL_COAST_S,
-    VISION_BALL_MAX_SPEED,
     VISION_BLEND_TAU,
     VISION_FIELD_MARGIN,
     VISION_FLIP_X,
@@ -37,13 +41,15 @@ from config import (  # noqa: E402
     VISION_GATE_RELOCK,
     VISION_REPLAY_GAP_CAP,
     VISION_ROBOT_COAST_S,
-    VISION_ROBOT_MAX_SPEED,
     VISION_SNAP_ANGLE,
     VISION_SNAP_DIST,
     VISION_STATS_WINDOW,
+    VISION_TRACKER_COAST,
+    VISION_VEL_NOISE,
 )
 
-FRESH, COAST, LOST = "fresh", "coast", "lost"
+# predict: unseen, riding the tracker's own coast inside the reach circle.
+FRESH, PREDICT, COAST, LOST = "fresh", "predict", "coast", "lost"
 
 # Latency above this is treated as clock skew between machines, not real delay.
 _MAX_PLAUSIBLE_LATENCY = 2.0  # seconds
@@ -66,7 +72,9 @@ class Sighting:
 
 @dataclass
 class _Track:
-    max_speed: float  # m/s, outlier gate
+    vmax: float  # m/s, fastest the object can move
+    accel: float | None  # m/s^2, most its drive can add; None: kicks set any velocity
+    damp: float  # 1/s, velocity decay (dv/dt = a - damp * v)
     coast_s: float
     x: float = 0.0  # real field, meters
     y: float = 0.0
@@ -75,21 +83,52 @@ class _Track:
     theta: float = 0.0  # rad
     omega: float = 0.0  # rad/s
     t_meas: float | None = None  # wall-clock capture time of last accepted sighting
+    # Tracker's Kalman coast while unseen: (x, y, vx, vy, theta, omega), clamped on arrival.
+    pred: tuple[float, ...] | None = None
+    t_pred: float | None = None
+    predicted: int = 0  # total coasted entries used
     rejects: int = 0  # current streak
     rejected: int = 0  # total
     seen: deque = field(default_factory=lambda: deque(maxlen=VISION_STATS_WINDOW))
 
+    def reach(self, t: float) -> tuple[float, float, float]:
+        """(cx, cy, r): where the object can be at t, from the last accepted sighting.
+
+        Robot: dv/dt = a - damp*v with |a| <= accel. Its measured velocity carries
+        it k = (1 - e^(-damp*g)) / damp seconds' worth; thrust in a fixed direction
+        adds at most accel * (g - k) / damp on top, in any direction. Ball: a kick
+        can set any velocity up to vmax at any instant, so vmax * g around it.
+        """
+        g = max(0.0, t - self.t_meas)
+        if self.accel is None:
+            return self.x, self.y, self.vmax * g + VISION_GATE_MARGIN
+        k = (1.0 - math.exp(-self.damp * g)) / self.damp
+        r = self.accel * (g - k) / self.damp + VISION_VEL_NOISE * g + VISION_GATE_MARGIN
+        return self.x + self.vx * k, self.y + self.vy * k, r
+
+    def clamp(self, x: float, y: float, t: float) -> tuple[float, float]:
+        cx, cy, r = self.reach(t)
+        dx, dy = x - cx, y - cy
+        d = math.hypot(dx, dy)
+        if d <= r:
+            return x, y
+        return cx + dx * r / d, cy + dy * r / d
+
     def gate(self, x: float, y: float, t: float) -> bool:
         if self.t_meas is None or t - self.t_meas > self.coast_s:
             return True
-        gap = t - self.t_meas
-        px, py = self.x + self.vx * gap, self.y + self.vy * gap
-        if math.hypot(x - px, y - py) <= self.max_speed * gap + VISION_GATE_MARGIN:
+        cx, cy, r = self.reach(t)
+        if math.hypot(x - cx, y - cy) <= r:
             return True
         self.rejects += 1
         self.rejected += 1
         # A run of rejects means the old track was wrong, not the camera.
         return self.rejects >= VISION_GATE_RELOCK
+
+
+def _cap(vx: float, vy: float, vmax: float) -> tuple[float, float]:
+    s = math.hypot(vx, vy)
+    return (vx, vy) if s <= vmax else (vx * vmax / s, vy * vmax / s)
 
 
 def parse_tag_map(s: str) -> dict[int, int] | None:
@@ -210,7 +249,7 @@ class VisionBridge:
         self._stop = threading.Event()
         self._status: dict[str, Any] = {"error": None}
 
-        self.ball = _Track(VISION_BALL_MAX_SPEED, VISION_BALL_COAST_S)
+        self.ball = _Track(MAX_BALL_SPEED, None, BALL_DAMP, VISION_BALL_COAST_S)
         self.robots = {rid: self._new_robot_track() for rid in self.tag_map.values()}
 
         self.field_w, self.field_h = 1.2, 0.8  # tracker default, replaced by each doc
@@ -259,7 +298,7 @@ class VisionBridge:
 
     @staticmethod
     def _new_robot_track() -> _Track:
-        return _Track(VISION_ROBOT_MAX_SPEED, VISION_ROBOT_COAST_S)
+        return _Track(ROBOT_MAX_SPEED, ROBOT_MAX_ACCEL, LINEAR_DAMP, VISION_ROBOT_COAST_S)
 
     def _robot_for_tag(self, tag: dict) -> int | None:
         tid = int(tag.get("id", -1))
@@ -309,6 +348,7 @@ class VisionBridge:
             if restarted:
                 for tr in (self.ball, *self.robots.values()):
                     tr.t_meas, tr.rejects = None, 0
+                    tr.pred = tr.t_pred = None
             if restarted or run_id != self._run_id:
                 self._run_id = run_id
                 self._last_seq = None
@@ -382,40 +422,60 @@ class VisionBridge:
         return e
 
     def _ingest(self, tr: _Track, e: dict, t_cap: float, heading: bool) -> None:
-        # Only real sightings count. The tracker's own coast is constant-velocity
-        # with no friction and has been seen running off the field for 13 s.
         x, y = float(e.get("x", 0.0)), float(e.get("y", 0.0))
+        vx, vy = float(e.get("vx", 0.0)), float(e.get("vy", 0.0))
+        theta = math.radians(float(e.get("theta_deg", 0.0))) if heading else 0.0
+        omega = math.radians(float(e.get("omega_deg", 0.0))) if heading else 0.0
         m = VISION_FIELD_MARGIN
-        ok = (
-            e.get("visible", False)
-            and not e.get("lost", False)
-            and -m <= x <= self.field_w + m
-            and -m <= y <= self.field_h + m
-            and tr.gate(x, y, t_cap)
-        )
+        visible, lost = e.get("visible", False), e.get("lost", False)
+        real = visible and not lost and -m <= x <= self.field_w + m and -m <= y <= self.field_h + m
+        ok = real and tr.gate(x, y, t_cap)
         tr.seen.append(bool(ok))
-        if not ok:
+        if ok:
+            tr.x, tr.y = x, y
+            tr.vx, tr.vy = _cap(vx, vy, tr.vmax)
+            if heading:
+                tr.theta, tr.omega = theta, omega
+            tr.t_meas = t_cap
+            tr.rejects = 0
+            tr.pred = tr.t_pred = None
             return
-        tr.x, tr.y = x, y
-        tr.vx, tr.vy = float(e.get("vx", 0.0)), float(e.get("vy", 0.0))
-        if heading:
-            tr.theta = math.radians(float(e.get("theta_deg", 0.0)))
-            tr.omega = math.radians(float(e.get("omega_deg", 0.0)))
-        tr.t_meas = t_cap
-        tr.rejects = 0
+        # Tracker coasting on its Kalman filter: use it, but only from a real fix
+        # we still trust, and never outside the reach circle or the field. Unbounded,
+        # that coast once carried the ball 6 m off a 0.8 m field.
+        if (
+            not VISION_TRACKER_COAST
+            or visible
+            or lost
+            or tr.t_meas is None
+            or t_cap - tr.t_meas >= tr.coast_s
+        ):
+            return
+        x, y = tr.clamp(x, y, t_cap)
+        x = min(max(x, -m), self.field_w + m)
+        y = min(max(y, -m), self.field_h + m)
+        vx, vy = _cap(vx, vy, tr.vmax)
+        if not heading:
+            theta, omega = tr.theta, tr.omega
+        tr.pred, tr.t_pred = (x, y, vx, vy, theta, omega), t_cap
+        tr.predicted += 1
 
     # ── output (sim thread) ──────────────────────────────────────────────────
 
-    def _to_sim(self, tr: _Track, age: float, mode: str) -> Sighting:
-        # Dead-reckon over capture latency plus the time since the last frame.
-        dt = age if mode == FRESH else 0.0
-        x, y = tr.x + tr.vx * dt, tr.y + tr.vy * dt
-        theta = tr.theta + tr.omega * dt
+    def _to_sim(
+        self, tr: _Track, st: tuple[float, ...], t0: float, now: float, age: float, mode: str
+    ) -> Sighting:
+        # Dead-reckon state st (taken at t0) over capture latency plus the time
+        # since that frame, then keep it inside the reach circle.
+        x, y, vx, vy, theta, omega = st
+        dt = max(0.0, now - t0) if mode in (FRESH, PREDICT) else 0.0
+        vx, vy = _cap(vx, vy, tr.vmax)
+        x, y = tr.clamp(x + vx * dt, y + vy * dt, now)
+        theta += omega * dt
         # TODO(hardware): on the default 9 x 6 field this inflates speeds (x4.7 for a
         # 1.93 m table); run_pipeline.py --field makes the sim true-size and this 1:1.
         sx, sy = FIELD_W / self.field_w, FIELD_H / self.field_h
-        x, y, vx, vy = x * sx, y * sy, tr.vx * sx, tr.vy * sy
-        omega = tr.omega
+        x, y, vx, vy = x * sx, y * sy, vx * sx, vy * sy
         if self.flip_x:
             x, vx, theta, omega = FIELD_W - x, -vx, math.pi - theta, -omega
         if self.flip_y:
@@ -426,13 +486,12 @@ class VisionBridge:
         if tr.t_meas is None:
             return Sighting(LOST, math.inf)
         age = max(0.0, now - tr.t_meas)
+        meas = (tr.x, tr.y, tr.vx, tr.vy, tr.theta, tr.omega)
         if age < VISION_FRESH_S:
-            mode = FRESH
-        elif age < tr.coast_s:
-            mode = COAST
-        else:
-            mode = LOST
-        return self._to_sim(tr, age, mode)
+            return self._to_sim(tr, meas, tr.t_meas, now, age, FRESH)
+        if age < tr.coast_s and tr.pred is not None and now - tr.t_pred < VISION_FRESH_S:
+            return self._to_sim(tr, tr.pred, tr.t_pred, now, age, PREDICT)
+        return self._to_sim(tr, meas, tr.t_meas, now, age, COAST if age < tr.coast_s else LOST)
 
     def poll(self, now: float | None = None) -> dict[str, Any]:
         now = time.time() if now is None else now
@@ -454,6 +513,7 @@ class VisionBridge:
                 "dupes": self.dupes,
                 "transport_drops": self.transport_drops,
                 "rejects": self.ball.rejected + sum(t.rejected for t in self.robots.values()),
+                "predicted": self.ball.predicted + sum(t.predicted for t in self.robots.values()),
                 "drop_pct": {
                     "ball": drop_pct(self.ball),
                     **{str(rid): drop_pct(tr) for rid, tr in self.robots.items()},
@@ -471,10 +531,10 @@ class VisionBridge:
 
 
 def apply_to_world(world: Any, snap: dict[str, Any]) -> None:
-    """Fresh: camera drives the body. Coast: physics carries it.
-    Lost: robot freezes in place, ball goes back to the sim."""
+    """Fresh / predict: camera (or tracker's coast) drives the body. Coast: physics
+    carries it. Lost: robot freezes in place, ball goes back to the sim."""
     for rid, s in snap["robots"].items():
-        if s.mode == FRESH:
+        if s.mode in (FRESH, PREDICT):
             world.drive_robot(
                 rid, (s.x, s.y), (s.vx, s.vy), s.angle, s.omega,
                 VISION_BLEND_TAU, VISION_SNAP_DIST, VISION_SNAP_ANGLE,
@@ -484,5 +544,5 @@ def apply_to_world(world: Any, snap: dict[str, Any]) -> None:
         else:
             world.freeze_robot(rid)
     b = snap["ball"]
-    if b.mode == FRESH:
+    if b.mode in (FRESH, PREDICT):
         world.drive_ball((b.x, b.y), (b.vx, b.vy), VISION_BLEND_TAU, VISION_SNAP_DIST)
